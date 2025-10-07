@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:gravity="center"
+    android:background="@color/background_primary"
+    tools:context=".ui.fragment.HomeFragment">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="바코드 출입 체크 시스템"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary"
+        android:layout_marginBottom="40dp"
+        android:gravity="center" />
+
+    <Button
+        android:id="@+id/btn_import_excel"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="엑셀 파일 불러오기"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_main_style" />
+
+    <Button
+        android:id="@+id/btn_download_template"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="엑셀 템플릿 다운로드"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_main_style" />
+
+    <Button
+        android:id="@+id/btn_create_sample_data"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="📊 샘플 데이터 생성 (테스트용)"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_secondary_style" />
+
+    <Button
+        android:id="@+id/btn_scan_barcode"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="바코드 스캔"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_main_style" />
+
+    <Button
+        android:id="@+id/btn_export_data"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="데이터 내보내기"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_main_style" />
+
+</LinearLayout>

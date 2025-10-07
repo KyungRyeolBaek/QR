@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/event_background">
+
+    <!-- 상단 헤더 영역 -->
+    <LinearLayout
+        android:id="@+id/header_layout"
+        android:layout_width="match_parent"
+        android:layout_height="100dp"
+        android:layout_alignParentTop="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="40dp"
+        android:background="@drawable/header_gradient">
+
+        <!-- 로고 영역 -->
+        <ImageView
+            android:id="@+id/iv_logo"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:src="@drawable/barcode"
+            android:layout_marginEnd="20dp"
+            android:scaleType="centerCrop" />
+
+        <!-- 이벤트 제목 영역 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_event_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="IFAA 2024"
+                android:textSize="32sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="The 21st Congress of the International Federation of Associations of Anatomists"
+                android:textSize="12sp"
+                android:textColor="@android:color/white"
+                android:alpha="0.9" />
+
+            <TextView
+                android:id="@+id/tv_event_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="2024-09-27"
+                android:textSize="14sp"
+                android:textColor="@android:color/white"
+                android:layout_marginTop="4dp" />
+
+        </LinearLayout>
+
+        <!-- 상단 버튼들 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_settings"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/btn_round_white"
+                android:text="⚙️"
+                android:textSize="20sp"
+                android:layout_marginEnd="10dp" />
+
+            <Button
+                android:id="@+id/btn_back"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/btn_round_white"
+                android:text="←"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Korean Only 뱃지 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/header_layout"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="20dp"
+        android:text="Korean Only"
+        android:background="@drawable/korean_only_badge"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="8dp" />
+
+    <!-- 중앙 정보 표시 영역 -->
+    <LinearLayout
+        android:id="@+id/info_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="80dp">
+
+        <!-- Full Name -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="15dp">
+
+            <TextView
+                android:layout_width="200dp"
+                android:layout_height="wrap_content"
+                android:text="Full Name"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/field_label"
+                android:background="@drawable/field_label_background"
+                android:padding="15dp" />
+
+            <TextView
+                android:id="@+id/tv_full_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:text=""
+                android:textSize="24sp"
+                android:textColor="@android:color/black"
+                android:background="@drawable/field_value_background"
+                android:padding="15dp"
+                android:gravity="start|center_vertical" />
+
+        </LinearLayout>
+
+        <!-- License No. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="15dp">
+
+            <TextView
+                android:layout_width="200dp"
+                android:layout_height="wrap_content"
+                android:text="License No."
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/field_label"
+                android:background="@drawable/field_label_background"
+                android:padding="15dp" />
+
+            <TextView
+                android:id="@+id/tv_license_no"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:text=""
+                android:textSize="24sp"
+                android:textColor="@android:color/black"
+                android:background="@drawable/field_value_background"
+                android:padding="15dp"
+                android:gravity="start|center_vertical" />
+
+        </LinearLayout>
+
+        <!-- First Scan Time -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="15dp">
+
+            <TextView
+                android:layout_width="200dp"
+                android:layout_height="wrap_content"
+                android:text="First Scan Time"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/field_label"
+                android:background="@drawable/field_label_background"
+                android:padding="15dp" />
+
+            <TextView
+                android:id="@+id/tv_first_scan_time"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:text=""
+                android:textSize="24sp"
+                android:textColor="@android:color/black"
+                android:background="@drawable/field_value_background"
+                android:padding="15dp"
+                android:gravity="start|center_vertical" />
+
+        </LinearLayout>
+
+        <!-- Last Scan Time -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="15dp">
+
+            <TextView
+                android:layout_width="200dp"
+                android:layout_height="wrap_content"
+                android:text="Last Scan Time"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/field_label"
+                android:background="@drawable/field_label_background"
+                android:padding="15dp" />
+
+            <TextView
+                android:id="@+id/tv_last_scan_time"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:text=""
+                android:textSize="24sp"
+                android:textColor="@android:color/black"
+                android:background="@drawable/field_value_background"
+                android:padding="15dp"
+                android:gravity="start|center_vertical" />
+
+        </LinearLayout>
+
+        <!-- Duration Time -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
+
+            <TextView
+                android:layout_width="200dp"
+                android:layout_height="wrap_content"
+                android:text="Duration Time"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/field_label"
+                android:background="@drawable/field_label_background"
+                android:padding="15dp" />
+
+            <TextView
+                android:id="@+id/tv_duration_time"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:text="00:00:00"
+                android:textSize="24sp"
+                android:textColor="@android:color/black"
+                android:background="@drawable/field_value_background"
+                android:padding="15dp"
+                android:gravity="start|center_vertical" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- CME Credits 섹션 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/info_layout"
+        android:layout_marginHorizontal="80dp"
+        android:layout_marginTop="20dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:text="CME Credits"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@color/field_label"
+            android:background="@drawable/field_label_background"
+            android:padding="15dp" />
+
+        <TextView
+            android:id="@+id/tv_cme_credits"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:text=""
+            android:textSize="24sp"
+            android:textColor="@android:color/black"
+            android:background="@drawable/field_value_background"
+            android:padding="15dp"
+            android:gravity="start|center_vertical" />
+
+    </LinearLayout>
+
+    <!-- 하단 안내 텍스트 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="30dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="40dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="● 행사장 입장 시 1일 1회, 행사 시 1일 1회를 반드시 스캔 승인 후 입장합니다."
+            android:textSize="14sp"
+            android:textColor="@android:color/black"
+            android:layout_marginBottom="5dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="● QR 스캔 기록에 따라 웹사이트 지급됩니다. (주차기준 총장 온라인 이력자비니 입고 해주시기 바랍니다.)"
+            android:textSize="14sp"
+            android:textColor="@android:color/black" />
+
+    </LinearLayout>
+
+    <!-- 현재 상태 표시 -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_below="@id/info_layout"
+        android:layout_marginTop="30dp"
+        android:text="바코드를 스캔해주세요"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="@color/status_waiting"
+        android:background="@drawable/status_background"
+        android:paddingHorizontal="30dp"
+        android:paddingVertical="10dp" />
+
+    <!-- 스캔 성공 인디케이터 -->
+    <View
+        android:id="@+id/scan_indicator"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/scan_success_overlay"
+        android:alpha="0"
+        android:visibility="visible" />
+
+    <!-- USB 바코드 스캔 안내 -->
+    <TextView
+        android:id="@+id/tv_scan_guide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="50dp"
+        android:text="📱 USB 바코드 리더기로 스캔해주세요"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="@color/status_waiting"
+        android:background="@drawable/status_background"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="12dp"
+        android:drawablePadding="8dp"
+        android:gravity="center" />
+
+    <!-- 숨겨진 EditText for USB 바코드 리더기 입력 -->
+    <EditText
+        android:id="@+id/et_hidden_barcode_input"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:inputType="text"
+        android:imeOptions="actionDone"
+        android:background="@android:color/transparent"
+        android:textColor="@android:color/transparent"
+        android:cursorVisible="false"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+
+</RelativeLayout>

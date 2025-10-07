@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Modern Primary Colors -->
+    <color name="primary_color">#667EEA</color>
+    <color name="primary_dark">#5A67D8</color>
+    <color name="primary_light">#A3BFFA</color>
+    <color name="secondary_color">#F093FB</color>
+    <color name="accent_color">#4FD1C7</color>
+
+    <!-- Background Colors -->
+    <color name="background_primary">#F7FAFC</color>
+    <color name="background_secondary">#EDF2F7</color>
+    <color name="surface_color">#FFFFFF</color>
+    <color name="surface_secondary">#F1F5F9</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#1A202C</color>
+    <color name="text_secondary">#4A5568</color>
+    <color name="text_hint">#A0AEC0</color>
+    <color name="text_on_primary">#FFFFFF</color>
+
+    <!-- Status Colors - Modern -->
+    <color name="status_waiting">#667EEA</color>
+    <color name="status_inside">#48BB78</color>
+    <color name="status_exited">#ED8936</color>
+    <color name="status_error">#F56565</color>
+    <color name="status_success">#38B2AC</color>
+
+    <!-- Event UI Colors - Updated -->
+    <color name="event_background_color">#667EEA</color>
+    <color name="event_text_color">#FFFFFF</color>
+    <color name="participant_text_color">#1A202C</color>
+    <color name="field_label">#FFFFFF</color>
+    <color name="field_value_bg">#F7FAFC</color>
+
+    <!-- Card & Surface Colors -->
+    <color name="card_background">#FFFFFF</color>
+    <color name="card_elevation">#E2E8F0</color>
+    <color name="divider_color">#E2E8F0</color>
+
+    <!-- Gradient Colors -->
+    <color name="gradient_start">#667EEA</color>
+    <color name="gradient_end">#764BA2</color>
+    <color name="gradient_secondary_start">#F093FB</color>
+    <color name="gradient_secondary_end">#F5576C</color>
+
+    <!-- Legacy Support -->
+    <color name="cme_credits_bg">#F56565</color>
+    <color name="korean_only_bg">#F56565</color>
+    <color name="event_bg_start">#667EEA</color>
+    <color name="event_bg_end">#764BA2</color>
+    <color name="scan_success_overlay">#4048BB78</color>
+</resources>
