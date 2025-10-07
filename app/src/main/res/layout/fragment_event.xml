@@ -167,7 +167,7 @@
             android:id="@+id/tv_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="바코드를 스캔해주세요"
+            android:text="QR 코드를 스캔해주세요"
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="@color/status_waiting"

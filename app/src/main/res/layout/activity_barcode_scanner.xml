@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- 바코드 스캐너 뷰 -->
+    <!-- QR 코드 스캐너 뷰 -->
     <com.journeyapps.barcodescanner.DecoratedBarcodeView
         android:id="@+id/barcode_scanner"
         android:layout_width="match_parent"
@@ -59,7 +59,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="바코드를 사각형 안에 맞춰주세요"
+            android:text="QR 코드를 사각형 안에 맞춰주세요"
             android:textColor="@android:color/white"
             android:textSize="18sp"
             android:textStyle="bold"

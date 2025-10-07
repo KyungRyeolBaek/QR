@@ -12,7 +12,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="바코드 출입 체크 시스템"
+        android:text="QR 코드 출입 체크 시스템"
         android:textSize="28sp"
         android:textStyle="bold"
         android:textColor="@color/text_primary"
@@ -50,7 +50,7 @@
         android:id="@+id/btn_scan_barcode"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:text="바코드 스캔"
+        android:text="QR 코드 스캔"
         android:textSize="18sp"
         android:layout_marginBottom="20dp"
         android:background="@drawable/btn_main_style" />

@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.barcode"
+    namespace = "com.example.qr"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.barcode"
+        applicationId = "com.example.qr"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -37,6 +37,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        dataBinding = true
     }
 
     packaging {

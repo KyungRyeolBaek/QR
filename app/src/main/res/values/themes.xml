@@ -1,21 +1,21 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.Barcode" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Base.Theme.QR" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your light theme here. -->
         <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
     </style>
 
-    <style name="Theme.Barcode" parent="Base.Theme.Barcode" />
+    <style name="Theme.QR" parent="Base.Theme.QR" />
 
     <!-- No ActionBar theme for scanner -->
-    <style name="Theme.Barcode.NoActionBar" parent="Theme.Barcode">
+    <style name="Theme.QR.NoActionBar" parent="Theme.QR">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
     </style>
 
     <!-- FullScreen theme for event display -->
-    <style name="Theme.Barcode.FullScreen" parent="Theme.Barcode">
+    <style name="Theme.QR.FullScreen" parent="Theme.QR">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>

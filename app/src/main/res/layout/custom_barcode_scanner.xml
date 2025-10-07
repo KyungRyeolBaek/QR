@@ -21,7 +21,7 @@
         android:layout_marginTop="20dp"
         android:background="@drawable/scanner_status_background"
         android:padding="10dp"
-        android:text="바코드를 카메라에 비춰주세요"
+        android:text="QR 코드를 카메라에 비춰주세요"
         android:textColor="@android:color/white"
         android:textSize="16sp" />
 

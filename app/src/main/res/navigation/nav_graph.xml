@@ -7,25 +7,25 @@
 
     <fragment
         android:id="@+id/nav_home"
-        android:name="com.example.barcode.ui.fragment.HomeFragment"
+        android:name="com.example.qr.ui.fragment.HomeFragment"
         android:label="홈"
         tools:layout="@layout/fragment_home" />
 
     <fragment
         android:id="@+id/nav_event"
-        android:name="com.example.barcode.ui.fragment.EventFragment"
+        android:name="com.example.qr.ui.fragment.EventFragment"
         android:label="이벤트"
         tools:layout="@layout/fragment_event" />
 
     <fragment
         android:id="@+id/nav_participants"
-        android:name="com.example.barcode.ui.fragment.ParticipantsFragment"
+        android:name="com.example.qr.ui.fragment.ParticipantsFragment"
         android:label="참가자"
         tools:layout="@layout/fragment_participants" />
 
     <fragment
         android:id="@+id/nav_monitoring"
-        android:name="com.example.barcode.ui.fragment.MonitoringFragment"
+        android:name="com.example.qr.ui.fragment.MonitoringFragment"
         android:label="모니터링"
         tools:layout="@layout/fragment_monitoring" />
 

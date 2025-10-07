@@ -342,7 +342,7 @@
         android:layout_centerHorizontal="true"
         android:layout_below="@id/info_layout"
         android:layout_marginTop="30dp"
-        android:text="바코드를 스캔해주세요"
+        android:text="QR 코드를 스캔해주세요"
         android:textSize="20sp"
         android:textStyle="bold"
         android:textColor="@color/status_waiting"
@@ -359,7 +359,7 @@
         android:alpha="0"
         android:visibility="visible" />
 
-    <!-- USB 바코드 스캔 안내 -->
+    <!-- USB QR 코드 스캔 안내 -->
     <TextView
         android:id="@+id/tv_scan_guide"
         android:layout_width="wrap_content"
@@ -367,7 +367,7 @@
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true"
         android:layout_marginBottom="50dp"
-        android:text="📱 USB 바코드 리더기로 스캔해주세요"
+        android:text="📱 USB QR 코드 리더기로 스캔해주세요"
         android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="@color/status_waiting"
@@ -377,7 +377,7 @@
         android:drawablePadding="8dp"
         android:gravity="center" />
 
-    <!-- 숨겨진 EditText for USB 바코드 리더기 입력 -->
+    <!-- 숨겨진 EditText for USB QR 코드 리더기 입력 -->
     <EditText
         android:id="@+id/et_hidden_barcode_input"
         android:layout_width="1dp"
