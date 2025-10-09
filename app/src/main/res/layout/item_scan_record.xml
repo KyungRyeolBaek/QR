@@ -26,15 +26,77 @@
                 android:text="참가자 이름"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black" />
+                android:textColor="@android:color/black"
+                android:layout_marginBottom="8dp" />
 
-            <TextView
-                android:id="@+id/tv_scan_time"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="스캔 시간"
-                android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="입장: "
+                    android:textSize="12sp"
+                    android:textColor="@android:color/darker_gray" />
+
+                <TextView
+                    android:id="@+id/tv_entry_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="-"
+                    android:textSize="12sp"
+                    android:textColor="@android:color/black" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="퇴장: "
+                    android:textSize="12sp"
+                    android:textColor="@android:color/darker_gray" />
+
+                <TextView
+                    android:id="@+id/tv_exit_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="-"
+                    android:textSize="12sp"
+                    android:textColor="@android:color/black" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="체류: "
+                    android:textSize="12sp"
+                    android:textColor="@android:color/darker_gray" />
+
+                <TextView
+                    android:id="@+id/tv_stay_duration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="-"
+                    android:textSize="12sp"
+                    android:textColor="@color/primary_color"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
@@ -42,7 +104,7 @@
             android:id="@+id/tv_scan_type"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="입장"
+            android:text="입장중"
             android:textSize="14sp"
             android:textColor="@android:color/white"
             android:background="@drawable/scan_type_background"

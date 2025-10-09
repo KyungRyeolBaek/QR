@@ -75,7 +75,7 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.zxing.embedded)
 
-    // Excel processing
+    // Excel processing (temporarily kept for MonitoringServer compatibility)
     implementation(libs.poi.ooxml)
     implementation(libs.poi.scratchpad)
 

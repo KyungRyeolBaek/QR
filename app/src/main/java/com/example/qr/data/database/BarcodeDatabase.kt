@@ -18,7 +18,7 @@ import com.example.qr.data.entity.ScanRecord
         Participant::class,
         ScanRecord::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -32,6 +32,14 @@ abstract class BarcodeDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: BarcodeDatabase? = null
 
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Add new columns to participants table
+                database.execSQL("ALTER TABLE participants ADD COLUMN englishName TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE participants ADD COLUMN chineseName TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): BarcodeDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -39,6 +47,7 @@ abstract class BarcodeDatabase : RoomDatabase() {
                     BarcodeDatabase::class.java,
                     "barcode_database"
                 )
+                    .addMigrations(MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

@@ -64,4 +64,22 @@
         android:layout_marginBottom="20dp"
         android:background="@drawable/btn_main_style" />
 
+    <Button
+        android:id="@+id/btn_send_qr_codes"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="📱 QR 코드 일괄 발송"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_main_style" />
+
+    <Button
+        android:id="@+id/btn_resend_qr_codes"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="🔄 QR 코드 재전송"
+        android:textSize="18sp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_secondary_style" />
+
 </LinearLayout>

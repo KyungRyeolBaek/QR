@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -102,8 +103,45 @@ class EventFragment : Fragment() {
         }
 
         binding.btnSettings.setOnClickListener {
-            Toast.makeText(requireContext(), "설정 기능은 추후 구현 예정입니다", Toast.LENGTH_SHORT).show()
+            showEventSettingsDialog()
         }
+    }
+
+    private fun showEventSettingsDialog() {
+        val event = viewModel.activeEvent.value ?: run {
+            Toast.makeText(requireContext(), "활성화된 이벤트가 없습니다", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialogView = LayoutInflater.from(requireContext()).inflate(
+            R.layout.dialog_event_settings,
+            null
+        )
+
+        val etEventTitle = dialogView.findViewById<android.widget.EditText>(R.id.etEventTitle)
+        val etEventDate = dialogView.findViewById<android.widget.EditText>(R.id.etEventDate)
+
+        // 현재 이벤트 정보로 초기화
+        etEventTitle.setText(event.eventName)
+        etEventDate.setText(event.eventDate)
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("이벤트 설정")
+            .setView(dialogView)
+            .setPositiveButton("저장") { _, _ ->
+                val newTitle = etEventTitle.text.toString().trim()
+                val newDate = etEventDate.text.toString().trim()
+
+                if (newTitle.isEmpty() || newDate.isEmpty()) {
+                    Toast.makeText(requireContext(), "타이틀과 날짜를 입력해주세요", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                viewModel.updateEventInfo(event.id, newTitle, newDate)
+                Toast.makeText(requireContext(), "이벤트 정보가 업데이트되었습니다", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("취소", null)
+            .show()
     }
 
     private fun observeViewModel() {
@@ -189,15 +227,24 @@ class EventFragment : Fragment() {
                     tvFullName.text = participantInfo.participant.fullName
                     tvLicenseNo.text = participantInfo.participant.licenseNo
 
+                    // 입장 시간: 최근 입장 시간 표시
                     tvFirstScanTime.text = participantInfo.firstScanTime?.let {
                         SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it))
                     } ?: ""
 
-                    tvLastScanTime.text = participantInfo.lastScanTime?.let {
-                        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it))
-                    } ?: ""
+                    // 입장 중일 때는 퇴장 시간과 체류 시간을 비움
+                    if (participantInfo.isCurrentlyInside) {
+                        // 입장 중: 퇴장 시간과 체류 시간 비우기
+                        tvLastScanTime.text = ""
+                        tvDurationTime.text = ""
+                    } else {
+                        // 퇴장 완료: 퇴장 시간과 체류 시간 표시
+                        tvLastScanTime.text = participantInfo.exitTime?.let {
+                            SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it))
+                        } ?: ""
+                        tvDurationTime.text = participantInfo.formattedDuration
+                    }
 
-                    tvDurationTime.text = participantInfo.formattedDuration
                     tvStatus.text = participantInfo.statusText
 
                     val statusColor = when (participantInfo.statusText) {

@@ -42,4 +42,10 @@ interface ParticipantDao {
 
     @Query("SELECT COUNT(*) FROM participants")
     fun getTotalParticipantCount(): Flow<Int>
+
+    @Query("SELECT * FROM participants WHERE eventId = :eventId AND phoneNumber = :phoneNumber LIMIT 1")
+    suspend fun getParticipantByPhone(eventId: Long, phoneNumber: String): Participant?
+
+    @Query("SELECT * FROM participants WHERE eventId = :eventId AND licenseNo = :licenseNo LIMIT 1")
+    suspend fun getParticipantByLicense(eventId: Long, licenseNo: String): Participant?
 }

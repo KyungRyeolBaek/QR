@@ -66,13 +66,18 @@ IFAA 2024 학회
     }
 
     private fun serveHomePage(): Response {
+        // DB에서 활성 이벤트 정보 가져오기
+        val activeEvent = runBlocking { eventDao.getActiveEvent() }
+        val eventTitle = activeEvent?.eventName ?: "이벤트"
+        val eventDescription = activeEvent?.description ?: ""
+
         val html = """
             <!DOCTYPE html>
             <html lang="ko">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>IFAA 2024 실시간 모니터링</title>
+                <title>$eventTitle 실시간 모니터링</title>
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
                     body {
@@ -931,8 +936,8 @@ IFAA 2024 학회
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>IFAA 2024 실시간 모니터링</h1>
-                        <p>The 21st Congress of the International Federation of Associations of Anatomists</p>
+                        <h1>$eventTitle 실시간 모니터링</h1>
+                        <p>$eventDescription</p>
                     </div>
 
                     <div class="stats-grid">
@@ -2445,6 +2450,10 @@ IFAA 2024 학회
     }
 
     private fun handleExcelUpload(session: IHTTPSession): Response {
+        // TODO: Convert to CSV upload
+        return newFixedLengthResponse(Response.Status.NOT_IMPLEMENTED, "application/json",
+            JSONObject().put("error", "Excel upload temporarily disabled").toString())
+        /*
         return try {
             if (session.method != Method.POST) {
                 return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "application/json",
@@ -2694,9 +2703,65 @@ IFAA 2024 학회
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                 JSONObject().put("error", "업로드 처리 실패: ${e.message}").toString())
         }
+        */
     }
 
     private suspend fun handleExcelDownload(session: IHTTPSession): Response {
+        println("CSV 다운로드 요청 시작 (참가자 목록)")
+        return try {
+            println("활성 이벤트 조회 중...")
+            val activeEvent = runBlocking { eventDao.getActiveEvent() }
+            if (activeEvent == null) {
+                println("활성 이벤트가 없음")
+                return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
+                    JSONObject().put("error", "활성화된 이벤트가 없습니다").toString())
+            }
+            println("활성 이벤트 찾음: ${activeEvent.eventName}")
+
+            // 참가자 데이터 가져오기
+            println("참가자 데이터 조회 중...")
+            val participants = runBlocking { participantDao.getParticipantsByEvent(activeEvent.id).first() }
+            println("참가자 수: ${participants.size}")
+
+            // CSV 파일 생성
+            println("CSV 파일 생성 시작")
+            val result = com.example.qr.utils.CsvWriter.exportCurrentParticipants(
+                context,
+                activeEvent,
+                participants
+            )
+
+            result.fold(
+                onSuccess = { file ->
+                    println("CSV 파일 생성 성공: ${file.absolutePath}")
+                    val csvBytes = file.readBytes()
+                    file.delete() // 임시 파일 삭제
+
+                    val response = newFixedLengthResponse(
+                        Response.Status.OK,
+                        "text/csv",
+                        java.io.ByteArrayInputStream(csvBytes),
+                        csvBytes.size.toLong()
+                    )
+                    response.addHeader("Content-Disposition", "attachment; filename=\"participants.csv\"")
+                    println("CSV 다운로드 응답 생성 완료")
+                    response
+                },
+                onFailure = { exception ->
+                    println("CSV 파일 생성 실패: ${exception.message}")
+                    exception.printStackTrace()
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                        JSONObject().put("error", "CSV 다운로드 실패: ${exception.message}").toString())
+                }
+            )
+
+        } catch (e: Exception) {
+            println("CSV 다운로드 오류: ${e.javaClass.simpleName} - ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                JSONObject().put("error", "CSV 다운로드 실패: ${e.javaClass.simpleName} - ${e.message}").toString())
+        }
+        /*
         println("Excel 다운로드 요청 시작")
         return try {
             println("활성 이벤트 조회 중...")
@@ -2780,10 +2845,49 @@ IFAA 2024 학회
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                 JSONObject().put("error", "Excel 다운로드 실패: ${e.javaClass.simpleName} - ${e.message}").toString())
         }
+        */
     }
 
     private suspend fun handleTemplateDownload(session: IHTTPSession): Response {
-        println("템플릿 다운로드 요청 시작")
+        println("CSV 템플릿 다운로드 요청 시작")
+        return try {
+            println("템플릿 파일 생성 시작")
+
+            // CSV 템플릿 파일 생성
+            val result = com.example.qr.utils.CsvWriter.exportParticipantTemplate(context)
+
+            result.fold(
+                onSuccess = { file ->
+                    println("CSV 템플릿 생성 성공: ${file.absolutePath}")
+                    val csvBytes = file.readBytes()
+                    file.delete() // 임시 파일 삭제
+
+                    val response = newFixedLengthResponse(
+                        Response.Status.OK,
+                        "text/csv",
+                        java.io.ByteArrayInputStream(csvBytes),
+                        csvBytes.size.toLong()
+                    )
+                    response.addHeader("Content-Disposition", "attachment; filename=\"template.csv\"")
+                    println("템플릿 다운로드 응답 생성 완료")
+                    response
+                },
+                onFailure = { exception ->
+                    println("CSV 템플릿 생성 실패: ${exception.message}")
+                    exception.printStackTrace()
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                        JSONObject().put("error", "템플릿 다운로드 실패: ${exception.message}").toString())
+                }
+            )
+
+        } catch (e: Exception) {
+            println("템플릿 다운로드 오류: ${e.javaClass.simpleName} - ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                JSONObject().put("error", "템플릿 다운로드 실패: ${e.javaClass.simpleName} - ${e.message}").toString())
+        }
+        /*
+        // OLD POI-based Excel template code
         return try {
             // 간단한 방식으로 변경 - 코루틴 없이 직접 처리
             println("템플릿 파일 생성 시작")
@@ -2885,6 +2989,7 @@ IFAA 2024 학회
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                 JSONObject().put("error", "템플릿 생성 실패: ${e.javaClass.simpleName} - ${e.message}").toString())
         }
+        */
     }
 
     private fun generateLicenseNumber(): String {
@@ -3020,9 +3125,71 @@ IFAA 2024 학회
     }
 
     /**
-     * 상세 Excel 다운로드 처리 (다중 시트)
+     * 상세 CSV 다운로드 처리 (모든 스캔 기록 포함)
      */
     private suspend fun handleDetailedExcelDownload(session: IHTTPSession): Response {
+        println("CSV 다운로드 요청 시작 (상세 스캔 기록)")
+        return try {
+            val activeEvent = runBlocking { eventDao.getActiveEvent() }
+            if (activeEvent == null) {
+                println("활성 이벤트가 없음")
+                return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
+                    JSONObject().put("error", "활성화된 이벤트가 없습니다").toString())
+            }
+            println("활성 이벤트 찾음: ${activeEvent.eventName}")
+
+            // 참가자 데이터 가져오기
+            val participants = runBlocking { participantDao.getParticipantsByEvent(activeEvent.id).first() }
+            println("참가자 수: ${participants.size}")
+
+            // 각 참가자의 스캔 기록 가져오기
+            val participantScans = runBlocking {
+                participants.map { participant ->
+                    val scanRecords = scanRecordDao.getScanRecordsByParticipant(participant.id).first()
+                    participant to scanRecords
+                }
+            }
+            println("스캔 기록 조회 완료")
+
+            // CSV 파일 생성
+            println("CSV 파일 생성 시작")
+            val result = com.example.qr.utils.CsvWriter.exportEventDataWithAllScans(
+                context,
+                activeEvent,
+                participantScans
+            )
+
+            result.fold(
+                onSuccess = { file ->
+                    println("CSV 파일 생성 성공: ${file.absolutePath}")
+                    val csvBytes = file.readBytes()
+                    file.delete() // 임시 파일 삭제
+
+                    val response = newFixedLengthResponse(
+                        Response.Status.OK,
+                        "text/csv",
+                        java.io.ByteArrayInputStream(csvBytes),
+                        csvBytes.size.toLong()
+                    )
+                    response.addHeader("Content-Disposition", "attachment; filename=\"detailed_records.csv\"")
+                    println("CSV 다운로드 응답 생성 완료")
+                    response
+                },
+                onFailure = { exception ->
+                    println("CSV 파일 생성 실패: ${exception.message}")
+                    exception.printStackTrace()
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                        JSONObject().put("error", "CSV 다운로드 실패: ${exception.message}").toString())
+                }
+            )
+
+        } catch (e: Exception) {
+            println("CSV 다운로드 오류: ${e.javaClass.simpleName} - ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                JSONObject().put("error", "CSV 다운로드 실패: ${e.javaClass.simpleName} - ${e.message}").toString())
+        }
+        /*
         println("🔥🔥🔥 상세 Excel 다운로드 요청 시작 (향상된 기능 포함) 🔥🔥🔥")
         return try {
             val activeEvent = runBlocking { eventDao.getActiveEvent() }
@@ -3106,6 +3273,7 @@ IFAA 2024 학회
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                 JSONObject().put("error", "상세 Excel 다운로드 실패: ${e.message}").toString())
         }
+        */
     }
 
     private fun createParticipantDetailSheet(

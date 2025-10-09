@@ -14,8 +14,10 @@ import com.example.qr.data.dao.ScanRecordDao
 import com.example.qr.data.entity.Event
 import com.example.qr.data.entity.Participant
 import com.example.qr.data.entity.ParticipantWithScanInfo
-import com.example.qr.utils.ExcelReader
-import com.example.qr.utils.ExcelWriter
+// TODO: Convert to CSV
+// import com.example.qr.utils.ExcelReader
+// import com.example.qr.utils.ExcelWriter
+import com.example.qr.service.SmsService
 import kotlinx.coroutines.launch
 import android.app.AlertDialog
 
@@ -55,6 +57,8 @@ class MainViewModel(
             }
 
             if (activeEvent != null) {
+                // TODO: Convert to CSV
+                /*
                 // 엑셀 파일 읽기
                 val result = ExcelReader.readParticipantsFromExcel(context, uri, activeEvent.id)
 
@@ -68,6 +72,8 @@ class MainViewModel(
                         _message.value = exception.message ?: "엑셀 파일 처리 중 오류가 발생했습니다."
                     }
                 )
+                */
+                _message.value = "Excel import temporarily disabled - use CSV export instead"
             } else {
                 _message.value = "이벤트 생성에 실패했습니다."
             }
@@ -96,6 +102,8 @@ class MainViewModel(
             // 현재는 빈 리스트로 처리
             val participantsWithScanInfo = emptyList<com.example.qr.data.entity.ParticipantWithScanInfo>()
 
+            // TODO: Convert to CSV
+            /*
             val result = ExcelWriter.exportEventData(context, activeEvent, participantsWithScanInfo)
 
             result.fold(
@@ -107,6 +115,8 @@ class MainViewModel(
                     _message.value = exception.message ?: "데이터 내보내기 중 오류가 발생했습니다."
                 }
             )
+            */
+            _message.value = "Excel export temporarily disabled - use participant management CSV export instead"
 
         } catch (e: Exception) {
             _message.value = "데이터 처리 중 오류가 발생했습니다: ${e.message}"
@@ -180,6 +190,8 @@ class MainViewModel(
     suspend fun downloadExcelTemplate(context: Context) {
         _isLoading.value = true
         try {
+            // TODO: Convert to CSV template
+            /*
             val result = ExcelWriter.exportParticipantsTemplate(context)
             result.fold(
                 onSuccess = { file ->
@@ -190,6 +202,8 @@ class MainViewModel(
                     _message.value = exception.message ?: "템플릿 생성 중 오류가 발생했습니다."
                 }
             )
+            */
+            _message.value = "Excel template temporarily disabled"
         } catch (e: Exception) {
             _message.value = "템플릿 생성 중 오류: ${e.message}"
         } finally {
@@ -328,5 +342,65 @@ class MainViewModel(
 
         // 스캔 기록 저장
         scanRecordDao.insertScanRecords(sampleScans)
+    }
+
+    suspend fun sendQrCodesToParticipants(context: Context, isResend: Boolean) {
+        _isLoading.value = true
+        try {
+            val activeEvent = eventDao.getActiveEvent()
+            if (activeEvent == null) {
+                _message.value = "활성화된 이벤트가 없습니다."
+                return
+            }
+
+            val participants = participantDao.getParticipantsByEvent(activeEvent.id).first()
+            if (participants.isEmpty()) {
+                _message.value = "발송할 참가자가 없습니다."
+                return
+            }
+
+            val smsService = SmsService(context)
+
+            // SMS 권한 확인
+            if (!smsService.hasSmsPermission()) {
+                _message.value = "SMS 권한이 필요합니다. 설정에서 권한을 허용해주세요."
+                return
+            }
+
+            // 메시지 템플릿 선택
+            val messageTemplate = if (isResend) {
+                SmsService.RESEND_MESSAGE_TEMPLATE
+            } else {
+                SmsService.DEFAULT_MESSAGE_TEMPLATE
+            }
+
+            _message.value = "QR 코드 발송 시작... (${participants.size}명)"
+
+            // 참가자 정보 변환
+            val participantInfos = participants.map { participant ->
+                SmsService.ParticipantInfo(
+                    name = participant.fullName,
+                    phoneNumber = participant.phoneNumber,
+                    barcodeData = participant.barcodeData
+                )
+            }
+
+            // 일괄 발송
+            smsService.sendBatchBarcodeMessages(
+                participants = participantInfos,
+                messageTemplate = messageTemplate,
+                onProgress = { current, total ->
+                    _message.value = "발송 중... ($current/$total)"
+                },
+                onComplete = { successCount, failureCount ->
+                    _message.value = "발송 완료: 성공 ${successCount}건, 실패 ${failureCount}건"
+                }
+            )
+
+        } catch (e: Exception) {
+            _message.value = "QR 코드 발송 실패: ${e.message}"
+        } finally {
+            _isLoading.value = false
+        }
     }
 }

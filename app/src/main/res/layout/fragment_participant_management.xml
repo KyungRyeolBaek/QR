@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background_primary"
+    tools:context=".ui.fragment.ParticipantManagementFragment">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="@color/primary_color">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="참가자 관리"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/white" />
+
+        <TextView
+            android:id="@+id/tv_participant_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="총 0명"
+            android:textSize="14sp"
+            android:textColor="@android:color/white"
+            android:layout_marginTop="4dp" />
+
+    </LinearLayout>
+
+    <!-- Search Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="@android:color/white"
+        android:elevation="2dp">
+
+        <EditText
+            android:id="@+id/et_search"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:hint="이름, 전화번호, 라이센스 번호로 검색"
+            android:padding="12dp"
+            android:background="@drawable/stats_card_background"
+            android:singleLine="true"
+            android:imeOptions="actionSearch" />
+
+        <Button
+            android:id="@+id/btn_clear_search"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:text="✕"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_secondary_style" />
+
+    </LinearLayout>
+
+    <!-- Filter and Action Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="@android:color/white">
+
+        <Spinner
+            android:id="@+id/spinner_status_filter"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:background="@drawable/stats_card_background"
+            android:padding="8dp" />
+
+        <Button
+            android:id="@+id/btn_select_all"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="전체선택"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_secondary_style" />
+
+        <Button
+            android:id="@+id/btn_delete_selected"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="삭제"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_main_style"
+            android:enabled="false" />
+
+    </LinearLayout>
+
+    <!-- CSV Export Button -->
+    <Button
+        android:id="@+id/btn_export_csv"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="📊 CSV 다운로드"
+        android:layout_margin="16dp"
+        android:background="@drawable/btn_secondary_style"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <!-- Participant List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_participants"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="8dp"
+        android:clipToPadding="false"
+        tools:listitem="@layout/item_participant" />
+
+    <!-- Loading Indicator -->
+    <ProgressBar
+        android:id="@+id/progress_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <!-- Empty State -->
+    <LinearLayout
+        android:id="@+id/empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📭"
+            android:textSize="64sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="참가자가 없습니다"
+            android:textSize="18sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginTop="16dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

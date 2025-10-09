@@ -7,7 +7,9 @@ import androidx.room.PrimaryKey
 data class Participant(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val fullName: String,
+    val fullName: String,              // 성명(국문)
+    val englishName: String = "",      // 성명(영문)
+    val chineseName: String = "",      // 성명(한문)
     val phoneNumber: String,
     val licenseNo: String,
     val barcodeData: String,

@@ -6,20 +6,29 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.qr.ViewModelFactory
 import com.example.qr.databinding.FragmentMonitoringBinding
 import com.example.qr.service.SmsService
 import com.example.qr.ui.adapter.ScanRecordsAdapter
+import com.example.qr.ui.adapter.ParticipantListAdapter
 import com.example.qr.ui.monitoring.MonitoringViewModel
+import com.google.android.material.tabs.TabLayout
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MonitoringFragment : Fragment() {
 
@@ -27,6 +36,18 @@ class MonitoringFragment : Fragment() {
     private val binding get() = _binding!!
     private lateinit var viewModel: MonitoringViewModel
     private lateinit var adapter: ScanRecordsAdapter
+    private lateinit var participantAdapter: ParticipantListAdapter
+    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            lifecycleScope.launch {
+                viewModel.uploadExcelFile(requireContext(), it)
+            }
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -44,12 +65,15 @@ class MonitoringFragment : Fragment() {
         viewModel = ViewModelProvider(this, factory)[MonitoringViewModel::class.java]
 
         setupRecyclerView()
+        setupParticipantList()
         setupUI()
+        setupParticipantManagement()
         observeViewModel()
         updateSmsPermissionStatus()
 
         viewModel.loadStatistics()
         viewModel.loadRecentScans()
+        viewModel.loadParticipantsWithFilter()
     }
 
     private fun setupRecyclerView() {
@@ -57,6 +81,26 @@ class MonitoringFragment : Fragment() {
         binding.rvRecentScans.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = this@MonitoringFragment.adapter
+        }
+    }
+
+    private fun setupParticipantList() {
+        participantAdapter = ParticipantListAdapter(
+            onItemClick = { item ->
+                // Toggle selection on item click
+                viewModel.toggleParticipantSelection(item.participant.id, !item.isSelected)
+            },
+            onSelectionChange = { item, isSelected ->
+                viewModel.toggleParticipantSelection(item.participant.id, isSelected)
+            },
+            onDetailClick = { item ->
+                showParticipantDetailDialog(item)
+            }
+        )
+
+        binding.rvParticipants.apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = participantAdapter
         }
     }
 
@@ -69,7 +113,269 @@ class MonitoringFragment : Fragment() {
             btnStopServer.setOnClickListener {
                 viewModel.stopWebServer()
             }
+
+            // 파일 관리 버튼들
+            btnUploadExcel.setOnClickListener {
+                openExcelFilePicker()
+            }
+
+            btnDownloadExcel.setOnClickListener {
+                lifecycleScope.launch {
+                    viewModel.downloadExcelData(requireContext())
+                }
+            }
+
+            btnDownloadDetailedExcel.setOnClickListener {
+                lifecycleScope.launch {
+                    viewModel.downloadDetailedExcel(requireContext())
+                }
+            }
+
+            btnDownloadTemplate.setOnClickListener {
+                lifecycleScope.launch {
+                    viewModel.downloadExcelTemplate(requireContext())
+                }
+            }
+
+            btnSendQrCodes.setOnClickListener {
+                showSendQrCodesDialog(isResend = false)
+            }
+
+            btnResendQrCodes.setOnClickListener {
+                showSendQrCodesDialog(isResend = true)
+            }
+
+            btnQrSettings.setOnClickListener {
+                showQrSettingsDialog()
+            }
         }
+    }
+
+    private fun setupParticipantManagement() {
+        binding.apply {
+            // Setup TabLayout
+            tabStatusFilter.addTab(tabStatusFilter.newTab().setText("전체"))
+            tabStatusFilter.addTab(tabStatusFilter.newTab().setText("입장중"))
+            tabStatusFilter.addTab(tabStatusFilter.newTab().setText("퇴장"))
+            tabStatusFilter.addTab(tabStatusFilter.newTab().setText("미입장"))
+
+            tabStatusFilter.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: TabLayout.Tab?) {
+                    val statusFilter = when (tab?.position) {
+                        0 -> "all"
+                        1 -> "inside"
+                        2 -> "exited"
+                        3 -> "never"
+                        else -> "all"
+                    }
+                    viewModel.loadParticipantsWithFilter(statusFilter)
+                }
+
+                override fun onTabUnselected(tab: TabLayout.Tab?) {}
+                override fun onTabReselected(tab: TabLayout.Tab?) {}
+            })
+
+            // Search functionality
+            etParticipantSearch.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    viewModel.searchParticipants(s?.toString() ?: "")
+                }
+            })
+
+            btnClearParticipantSearch.setOnClickListener {
+                etParticipantSearch.text.clear()
+            }
+
+            // Selection buttons
+            btnSelectAllParticipants.setOnClickListener {
+                viewModel.toggleSelectAllParticipants()
+            }
+
+            btnDeleteSelectedParticipants.setOnClickListener {
+                showDeleteConfirmationDialog()
+            }
+
+            // QR send buttons for selected participants
+            btnSendQrToSelected.setOnClickListener {
+                showSendQrToSelectedDialog(isResend = false)
+            }
+
+            btnResendQrToSelected.setOnClickListener {
+                showSendQrToSelectedDialog(isResend = true)
+            }
+        }
+    }
+
+    private fun showParticipantDetailDialog(item: com.example.qr.ui.adapter.ParticipantWithSelection) {
+        val participant = item.participant
+        val message = buildString {
+            append("이름: ${participant.fullName}\n")
+            append("전화번호: ${participant.phoneNumber}\n")
+            append("라이센스: ${participant.licenseNo}\n")
+            append("바코드: ${participant.barcodeData}\n")
+            append("스캔 횟수: ${item.scanCount}회\n")
+            append("상태: ${if (item.isCurrentlyInside) "입장중" else if (item.scanCount > 0) "퇴장" else "미입장"}\n")
+            if (item.lastScanTime != null) {
+                append("마지막 스캔: ${dateFormat.format(Date(item.lastScanTime))}")
+            }
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("참가자 상세 정보")
+            .setMessage(message)
+            .setPositiveButton("확인", null)
+            .show()
+    }
+
+    private fun showDeleteConfirmationDialog() {
+        val selectedCount = viewModel.selectedParticipants.value?.size ?: 0
+        if (selectedCount == 0) {
+            Toast.makeText(requireContext(), "삭제할 참가자를 선택해주세요", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("참가자 삭제")
+            .setMessage("선택한 ${selectedCount}명의 참가자를 삭제하시겠습니까?\n\n스캔 기록도 함께 삭제됩니다.")
+            .setPositiveButton("삭제") { _, _ ->
+                viewModel.deleteSelectedParticipants()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun showSendQrToSelectedDialog(isResend: Boolean) {
+        val selectedCount = viewModel.selectedParticipants.value?.size ?: 0
+        if (selectedCount == 0) {
+            Toast.makeText(requireContext(), "발송할 참가자를 선택해주세요", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val title = if (isResend) "선택 참가자 QR 코드 재전송" else "선택 참가자 QR 코드 발송"
+        val message = if (isResend) {
+            "선택된 ${selectedCount}명의 참가자에게 QR 코드를 재전송하시겠습니까?\n\n참고: SMS 권한이 필요합니다."
+        } else {
+            "선택된 ${selectedCount}명의 참가자에게 QR 코드를 발송하시겠습니까?\n\n참고: SMS 권한이 필요합니다."
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("발송") { _, _ ->
+                lifecycleScope.launch {
+                    viewModel.sendQrCodesToSelectedParticipants(requireContext(), isResend)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun showQrSettingsDialog() {
+        val prefs = requireContext().getSharedPreferences("qr_settings", android.content.Context.MODE_PRIVATE)
+
+        val defaultTemplate = com.example.qr.service.SmsService.DEFAULT_MESSAGE_TEMPLATE
+        val defaultResendTemplate = com.example.qr.service.SmsService.RESEND_MESSAGE_TEMPLATE
+
+        val currentDefaultTemplate = prefs.getString("default_template", defaultTemplate) ?: defaultTemplate
+        val currentResendTemplate = prefs.getString("resend_template", defaultResendTemplate) ?: defaultResendTemplate
+
+        val dialogView = layoutInflater.inflate(android.R.layout.simple_list_item_1, null)
+
+        val options = arrayOf(
+            "기본 메시지 템플릿 편집",
+            "재발송 메시지 템플릿 편집",
+            "템플릿 초기화"
+        )
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("⚙️ QR 코드 발송 설정")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showTemplateEditDialog("기본 메시지 템플릿", currentDefaultTemplate, "default_template")
+                    1 -> showTemplateEditDialog("재발송 메시지 템플릿", currentResendTemplate, "resend_template")
+                    2 -> resetTemplates()
+                }
+            }
+            .setNegativeButton("닫기", null)
+            .show()
+    }
+
+    private fun showTemplateEditDialog(title: String, currentTemplate: String, key: String) {
+        val editText = android.widget.EditText(requireContext()).apply {
+            setText(currentTemplate)
+            minLines = 6
+            maxLines = 10
+            hint = "사용 가능한 변수:\n{이름} - 참가자 이름"
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setView(editText)
+            .setPositiveButton("저장") { _, _ ->
+                val newTemplate = editText.text.toString()
+                if (newTemplate.isNotBlank()) {
+                    val prefs = requireContext().getSharedPreferences("qr_settings", android.content.Context.MODE_PRIVATE)
+                    prefs.edit().putString(key, newTemplate).apply()
+                    Toast.makeText(requireContext(), "템플릿이 저장되었습니다", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(requireContext(), "템플릿은 비워둘 수 없습니다", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("취소", null)
+            .setNeutralButton("미리보기") { _, _ ->
+                showTemplatePreview(title, editText.text.toString())
+            }
+            .show()
+    }
+
+    private fun showTemplatePreview(title: String, template: String) {
+        val preview = template.replace("{이름}", "홍길동")
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("$title - 미리보기")
+            .setMessage(preview)
+            .setPositiveButton("확인", null)
+            .show()
+    }
+
+    private fun resetTemplates() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("템플릿 초기화")
+            .setMessage("모든 메시지 템플릿을 기본값으로 초기화하시겠습니까?")
+            .setPositiveButton("초기화") { _, _ ->
+                val prefs = requireContext().getSharedPreferences("qr_settings", android.content.Context.MODE_PRIVATE)
+                prefs.edit().clear().apply()
+                Toast.makeText(requireContext(), "템플릿이 초기화되었습니다", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun openExcelFilePicker() {
+        // CSV files - use wildcard to handle different MIME types
+        filePickerLauncher.launch("text/comma-separated-values")
+    }
+
+    private fun showSendQrCodesDialog(isResend: Boolean) {
+        val title = if (isResend) "QR 코드 재전송" else "QR 코드 일괄 발송"
+        val message = if (isResend) {
+            "등록된 참가자에게 QR 코드를 재전송하시겠습니까?\n\n참고: SMS 권한이 필요합니다."
+        } else {
+            "등록된 참가자에게 QR 코드를 발송하시겠습니까?\n\n참고: SMS 권한이 필요합니다."
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("발송") { _, _ ->
+                lifecycleScope.launch {
+                    viewModel.sendQrCodesToParticipants(requireContext(), isResend)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
     }
 
     private fun observeViewModel() {
@@ -119,6 +425,25 @@ class MonitoringFragment : Fragment() {
 
         viewModel.message.observe(viewLifecycleOwner) { message ->
             Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        }
+
+        // Participant management observers
+        viewModel.participants.observe(viewLifecycleOwner) { participants ->
+            participantAdapter.submitList(participants)
+            binding.apply {
+                tvParticipantsCount.text = "${participants.size}명"
+                emptyStateParticipants.visibility = if (participants.isEmpty()) View.VISIBLE else View.GONE
+                rvParticipants.visibility = if (participants.isEmpty()) View.GONE else View.VISIBLE
+            }
+        }
+
+        viewModel.selectedParticipants.observe(viewLifecycleOwner) { selectedIds ->
+            val hasSelection = selectedIds.isNotEmpty()
+            binding.apply {
+                btnDeleteSelectedParticipants.isEnabled = hasSelection
+                btnSendQrToSelected.isEnabled = hasSelection
+                btnResendQrToSelected.isEnabled = hasSelection
+            }
         }
     }
 

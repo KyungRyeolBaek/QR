@@ -19,9 +19,9 @@
 
     <fragment
         android:id="@+id/nav_participants"
-        android:name="com.example.qr.ui.fragment.ParticipantsFragment"
+        android:name="com.example.qr.ui.fragment.ParticipantManagementFragment"
         android:label="참가자"
-        tools:layout="@layout/fragment_participants" />
+        tools:layout="@layout/fragment_participant_management" />
 
     <fragment
         android:id="@+id/nav_monitoring"

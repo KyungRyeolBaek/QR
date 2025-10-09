@@ -181,28 +181,78 @@ class EventViewModel(
     }
 
     private suspend fun findParticipantByBarcode(barcodeData: String): Participant? {
-        // 직접 QR 코드 데이터로 찾기
+        val event = _activeEvent.value ?: return null
+
+        // 1. 직접 QR 코드 데이터로 정확히 매칭
         var participant = participantDao.getParticipantByBarcode(barcodeData)
+        if (participant != null) {
+            println("✅ [SEARCH] QR 코드로 직접 매칭: $barcodeData")
+            return participant
+        }
 
-        if (participant == null) {
-            // JSON 형태의 QR 코드인 경우 파싱
-            try {
-                if (barcodeData.startsWith("{") && barcodeData.contains("\"code\"")) {
-                    // JSON에서 code 추출
-                    val codePattern = "\"code\"\\s*:\\s*\"([^\"]+)\"".toRegex()
-                    val matchResult = codePattern.find(barcodeData)
-                    val code = matchResult?.groupValues?.get(1)
-
-                    if (code != null) {
-                        participant = participantDao.getParticipantByBarcode(code)
-                    }
-                }
-            } catch (e: Exception) {
-                // JSON 파싱 실패시 원본 데이터 사용
+        // 2. 하이픈(-) ↔ 언더바(_) 변환 후 매칭
+        // QR-12342 → QR_12342 또는 QR_12342 → QR-12342
+        val alternativeCode = when {
+            barcodeData.contains("-") -> barcodeData.replace("-", "_")
+            barcodeData.contains("_") -> barcodeData.replace("_", "-")
+            else -> null
+        }
+        if (alternativeCode != null) {
+            participant = participantDao.getParticipantByBarcode(alternativeCode)
+            if (participant != null) {
+                println("✅ [SEARCH] 하이픈/언더바 변환 후 매칭: $barcodeData → $alternativeCode")
+                return participant
             }
         }
 
-        return participant
+        // 3. JSON 형태의 QR 코드인 경우 파싱
+        if (barcodeData.startsWith("{") && barcodeData.contains("\"code\"")) {
+            try {
+                val codePattern = "\"code\"\\s*:\\s*\"([^\"]+)\"".toRegex()
+                val matchResult = codePattern.find(barcodeData)
+                val code = matchResult?.groupValues?.get(1)
+
+                if (code != null) {
+                    participant = participantDao.getParticipantByBarcode(code)
+                    if (participant != null) {
+                        println("✅ [SEARCH] JSON 파싱 후 매칭: $code")
+                        return participant
+                    }
+                }
+            } catch (e: Exception) {
+                println("⚠️ [SEARCH] JSON 파싱 실패: ${e.message}")
+            }
+        }
+
+        // 4. QR 코드가 면허번호 그 자체일 경우 (직접 입력된 경우)
+        participant = participantDao.getParticipantByLicense(event.id, barcodeData)
+        if (participant != null) {
+            println("✅ [SEARCH] 면허번호로 매칭: $barcodeData")
+            return participant
+        }
+
+        // 5. QR_ 또는 QR- prefix 제거 후 면허번호로 매칭 시도
+        if (barcodeData.startsWith("QR_") || barcodeData.startsWith("QR-")) {
+            val licenseNo = barcodeData.substring(3) // "QR_" 또는 "QR-" 제거
+            participant = participantDao.getParticipantByLicense(event.id, licenseNo)
+            if (participant != null) {
+                println("✅ [SEARCH] QR prefix 제거 후 면허번호로 매칭: $licenseNo")
+                return participant
+            }
+        }
+
+        // 6. IFAA2024_ prefix 제거 후 면허번호로 매칭 시도 (하위 호환성)
+        if (barcodeData.startsWith("IFAA2024_")) {
+            val licenseNo = barcodeData.substring(9) // "IFAA2024_" 제거
+            participant = participantDao.getParticipantByLicense(event.id, licenseNo)
+            if (participant != null) {
+                println("✅ [SEARCH] IFAA2024_ prefix 제거 후 면허번호로 매칭: $licenseNo")
+                return participant
+            }
+        }
+
+        println("❌ [SEARCH] 모든 검색 방법 실패: $barcodeData")
+        return null
     }
 
     private suspend fun determineScanType(participant: Participant, eventId: Long): ScanType {
@@ -222,7 +272,8 @@ class EventViewModel(
         return try {
             println("📊 [SCAN_INFO] 참가자 스캔 정보 로드 시작: ${participant.fullName} (ID: ${participant.id})")
 
-            val firstEntry = scanRecordDao.getFirstScanByType(participant.id, eventId, ScanType.ENTRY)
+            // 최근(마지막) 입장 시간을 가져옴 (첫번째가 아닌 최근 입장)
+            val lastEntry = scanRecordDao.getLastScanByType(participant.id, eventId, ScanType.ENTRY)
             val lastScan = scanRecordDao.getLastScanRecord(participant.id, eventId)
             val totalScans = scanRecordDao.getScanRecordCountByParticipant(participant.id, eventId)
 
@@ -230,14 +281,14 @@ class EventViewModel(
             val isCurrentlyInside = lastScan?.scanType == ScanType.ENTRY
 
             println("📊 [SCAN_INFO] 로드 완료:")
-            println("   첫 입장: ${firstEntry?.scanTime?.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "없음"}")
+            println("   최근 입장: ${lastEntry?.scanTime?.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "없음"}")
             println("   마지막 스캔: ${lastScan?.scanTime?.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "없음"}")
             println("   총 스캔 횟수: $totalScans")
             println("   현재 상태: ${if (isCurrentlyInside) "입장중" else "퇴장완료"}")
 
             ParticipantWithScanInfo(
                 participant = participant,
-                firstScanTime = firstEntry?.scanTime,
+                firstScanTime = lastEntry?.scanTime,  // 최근 입장 시간
                 lastScanTime = lastScan?.scanTime,
                 lastScanType = lastScan?.scanType,
                 totalScans = totalScans,
@@ -261,6 +312,30 @@ class EventViewModel(
 
     fun clearCurrentParticipant() {
         _currentParticipant.value = null
+    }
+
+    fun updateEventInfo(eventId: Long, newTitle: String, newDate: String) {
+        viewModelScope.launch {
+            try {
+                val event = eventDao.getEventById(eventId)
+                if (event != null) {
+                    val updatedEvent = event.copy(
+                        eventName = newTitle,
+                        eventDate = newDate
+                    )
+                    eventDao.updateEvent(updatedEvent)
+                    _activeEvent.value = updatedEvent
+                } else {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        _errorMessage.value = "이벤트를 찾을 수 없습니다"
+                    }
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _errorMessage.value = "이벤트 업데이트 실패: ${e.message}"
+                }
+            }
+        }
     }
 
     // 테스트용 데이터 생성 함수

@@ -84,12 +84,40 @@ class HomeFragment : Fragment() {
                 }
             }
 
+            btnSendQrCodes.setOnClickListener {
+                showSendQrCodesDialog(isResend = false)
+            }
+
+            btnResendQrCodes.setOnClickListener {
+                showSendQrCodesDialog(isResend = true)
+            }
+
             // 로그 파일 보기 버튼 (디버깅용)
             btnCreateSampleData.setOnLongClickListener {
                 showLogFile()
                 true
             }
         }
+    }
+
+    private fun showSendQrCodesDialog(isResend: Boolean) {
+        val title = if (isResend) "QR 코드 재전송" else "QR 코드 일괄 발송"
+        val message = if (isResend) {
+            "등록된 참가자에게 QR 코드를 재전송하시겠습니까?\n\n참고: SMS 권한이 필요합니다."
+        } else {
+            "등록된 참가자에게 QR 코드를 발송하시겠습니까?\n\n참고: SMS 권한이 필요합니다."
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("발송") { _, _ ->
+                lifecycleScope.launch {
+                    viewModel.sendQrCodesToParticipants(requireContext(), isResend)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
     }
 
     private fun showLogFile() {
