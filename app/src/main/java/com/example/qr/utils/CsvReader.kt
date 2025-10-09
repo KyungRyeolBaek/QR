@@ -10,7 +10,7 @@ class CsvReader {
     companion object {
         /**
          * Read participants from CSV file with new template format:
-         * 성명(국문), 성명(영문), 성명(한문), 휴대폰, 면허번호
+         * 성명(국문), 성명(영문), 성명(한문), 휴대폰, 소속, 면허번호
          */
         fun readParticipantsFromCsv(
             context: Context,
@@ -60,18 +60,19 @@ class CsvReader {
         private fun parseCsvLine(line: String, eventId: Long, lineNumber: Int): Participant {
             val values = line.split(",").map { it.trim() }
 
-            if (values.size < 5) {
-                throw Exception("필수 컬럼이 부족합니다 (최소 5개 필요)")
+            if (values.size < 6) {
+                throw Exception("필수 컬럼이 부족합니다 (최소 6개 필요)")
             }
 
             val koreanName = values[0].removeQuotes()
             val englishName = values[1].removeQuotes()
             val chineseName = values[2].removeQuotes()
             val phoneNumber = values[3].removeQuotes().removePhoneFormatting()
-            val licenseNo = values[4].removeQuotes()
+            val organization = values[4].removeQuotes()
+            val licenseNo = values[5].removeQuotes()
 
             // QR코드 컬럼이 있으면 사용, 없거나 비어있으면 자동 생성
-            val qrCodeFromCsv = if (values.size > 5) values[5].removeQuotes() else ""
+            val qrCodeFromCsv = if (values.size > 6) values[6].removeQuotes() else ""
 
             // Validate required fields
             if (koreanName.isBlank()) {
@@ -96,6 +97,7 @@ class CsvReader {
                 englishName = englishName,
                 chineseName = chineseName,
                 phoneNumber = phoneNumber,
+                organization = organization,
                 licenseNo = licenseNo,
                 barcodeData = barcodeData,
                 eventId = eventId

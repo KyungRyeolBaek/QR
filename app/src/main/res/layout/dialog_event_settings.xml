@@ -17,7 +17,7 @@
         android:id="@+id/etEventTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="예: IFAA 2024"
+        android:hint="예: 대한해부학회 2025"
         android:inputType="text"
         android:maxLines="1"
         android:textSize="16sp"
@@ -35,7 +35,7 @@
         android:id="@+id/etEventDate"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="예: 2024.12.07-08"
+        android:hint="예: 2025.10.15-17"
         android:inputType="text"
         android:maxLines="1"
         android:textSize="16sp" />

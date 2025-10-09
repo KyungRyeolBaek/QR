@@ -3,25 +3,13 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/nav_home">
-
-    <fragment
-        android:id="@+id/nav_home"
-        android:name="com.example.qr.ui.fragment.HomeFragment"
-        android:label="홈"
-        tools:layout="@layout/fragment_home" />
+    app:startDestination="@id/nav_monitoring">
 
     <fragment
         android:id="@+id/nav_event"
         android:name="com.example.qr.ui.fragment.EventFragment"
         android:label="이벤트"
         tools:layout="@layout/fragment_event" />
-
-    <fragment
-        android:id="@+id/nav_participants"
-        android:name="com.example.qr.ui.fragment.ParticipantManagementFragment"
-        android:label="참가자"
-        tools:layout="@layout/fragment_participant_management" />
 
     <fragment
         android:id="@+id/nav_monitoring"

@@ -23,7 +23,7 @@
         android:id="@+id/btn_import_excel"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:text="엑셀 파일 불러오기"
+        android:text="csv 파일 불러오기"
         android:textSize="18sp"
         android:layout_marginBottom="20dp"
         android:background="@drawable/btn_main_style" />
@@ -32,7 +32,7 @@
         android:id="@+id/btn_download_template"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:text="엑셀 템플릿 다운로드"
+        android:text="csv 템플릿 다운로드"
         android:textSize="18sp"
         android:layout_marginBottom="20dp"
         android:background="@drawable/btn_main_style" />

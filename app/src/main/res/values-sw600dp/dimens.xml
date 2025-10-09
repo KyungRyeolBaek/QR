@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tablet-specific text sizes (600dp width and larger) -->
+
+    <!-- Event Fragment Text Sizes -->
+    <dimen name="event_title_text_size">44sp</dimen>
+    <dimen name="event_date_text_size">22sp</dimen>
+    <dimen name="participant_name_text_size">42sp</dimen>
+    <dimen name="participant_info_text_size">28sp</dimen>
+    <dimen name="time_label_text_size">26sp</dimen>
+    <dimen name="status_text_size">32sp</dimen>
+
+    <!-- Home Fragment Text Sizes -->
+    <dimen name="home_title_text_size">48sp</dimen>
+    <dimen name="home_subtitle_text_size">24sp</dimen>
+    <dimen name="home_button_text_size">22sp</dimen>
+
+    <!-- Monitoring Fragment Text Sizes -->
+    <dimen name="monitoring_title_text_size">32sp</dimen>
+    <dimen name="monitoring_stats_text_size">24sp</dimen>
+    <dimen name="monitoring_item_text_size">20sp</dimen>
+
+    <!-- Bottom Navigation -->
+    <dimen name="bottom_nav_text_size">14sp</dimen>
+    <dimen name="bottom_nav_icon_size">28dp</dimen>
+</resources>

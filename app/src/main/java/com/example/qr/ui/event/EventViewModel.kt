@@ -32,6 +32,11 @@ class EventViewModel(
     private val _scanSuccess = MutableLiveData<Boolean>()
     val scanSuccess: LiveData<Boolean> = _scanSuccess
 
+    // 마지막 스캔 시간 저장 (연속 스캔 방지)
+    private var lastScanTime: Long = 0
+    private val SCAN_DELAY_MS = 1500L // 1.5초 딜레이
+    private var isScanning = false // 스캔 진행 중 플래그
+
     fun loadActiveEvent() {
         viewModelScope.launch {
             try {
@@ -49,6 +54,25 @@ class EventViewModel(
     fun processBarcodeScanned(barcodeData: String) {
         viewModelScope.launch {
             try {
+                // 스캔 진행 중이면 즉시 차단
+                if (isScanning) {
+                    println("🚫 [SCAN_BLOCKED] 스캔 처리 중 - 비활성화 상태")
+                    com.example.qr.utils.CrashLogger.log("🚫 스캔 처리 중 - 차단")
+                    return@launch
+                }
+
+                // 연속 스캔 방지: 1.5초 이내 재스캔 차단
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastScanTime < SCAN_DELAY_MS) {
+                    println("⏱️ [SCAN_BLOCKED] 연속 스캔 차단: ${currentTime - lastScanTime}ms 경과")
+                    com.example.qr.utils.CrashLogger.log("⏱️ 연속 스캔 차단: 딜레이 ${SCAN_DELAY_MS}ms 미만")
+                    return@launch
+                }
+
+                // 스캔 시작: flag와 시간 업데이트
+                isScanning = true
+                lastScanTime = currentTime
+
                 println("🔍 [SCAN_START] QR 코드 스캔 시작: $barcodeData")
                 com.example.qr.utils.CrashLogger.log("🔍 [SCAN_START] QR 코드 스캔 시작: $barcodeData")
 
@@ -121,7 +145,7 @@ class EventViewModel(
                     com.example.qr.utils.CrashLogger.log("✅ 스캔 완료!")
                 }
 
-                // 별도 코루틴으로 애니메이션 트리거 (UI 블로킹 방지)
+                // 별도 코루틴으로 애니메이션 트리거 및 스캔 재활성화
                 viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                     kotlinx.coroutines.delay(100)  // UI 업데이트 완료 대기
                     _scanSuccess.value = true
@@ -129,9 +153,18 @@ class EventViewModel(
                     kotlinx.coroutines.delay(50)
                     _scanSuccess.value = false  // 이벤트 소비 후 리셋
                     com.example.qr.utils.CrashLogger.log("scanSuccess 리셋됨")
+
+                    // 1.5초 대기 후 스캔 재활성화
+                    kotlinx.coroutines.delay(SCAN_DELAY_MS)
+                    isScanning = false
+                    println("✅ [SCAN_READY] 스캔 준비 완료 - 다음 스캔 가능")
+                    com.example.qr.utils.CrashLogger.log("✅ 스캔 준비 완료")
                 }
 
             } catch (e: Exception) {
+                // 에러 발생 시 스캔 플래그 해제
+                isScanning = false
+
                 println("❌❌❌ [SCAN_ERROR] 스캔 처리 실패!")
                 println("에러 타입: ${e.javaClass.simpleName}")
                 println("에러 메시지: ${e.message}")
@@ -237,16 +270,6 @@ class EventViewModel(
             participant = participantDao.getParticipantByLicense(event.id, licenseNo)
             if (participant != null) {
                 println("✅ [SEARCH] QR prefix 제거 후 면허번호로 매칭: $licenseNo")
-                return participant
-            }
-        }
-
-        // 6. IFAA2024_ prefix 제거 후 면허번호로 매칭 시도 (하위 호환성)
-        if (barcodeData.startsWith("IFAA2024_")) {
-            val licenseNo = barcodeData.substring(9) // "IFAA2024_" 제거
-            participant = participantDao.getParticipantByLicense(event.id, licenseNo)
-            if (participant != null) {
-                println("✅ [SEARCH] IFAA2024_ prefix 제거 후 면허번호로 매칭: $licenseNo")
                 return participant
             }
         }

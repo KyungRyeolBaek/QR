@@ -65,15 +65,15 @@ class SmsService(private val context: Context) {
     companion object {
         const val SMS_PERMISSION_REQUEST = 1001
         const val DEFAULT_MESSAGE_TEMPLATE = """안녕하세요 {이름}님,
-IFAA 2025 학회에 등록되셨습니다.
+대한해부학회에 등록되셨습니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
-일시: 2025-09-27
-문의: 02-123-4567"""
+일시: 2025-10-15
+문의: 010-8326-9157"""
 
         const val RESEND_MESSAGE_TEMPLATE = """{이름}님의 QR 코드를 재전송합니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
-IFAA 2025 학회
-문의: 02-123-4567"""
+대한해부학회
+문의: 010-8326-9157"""
 
         // 발송 상태 상수
         const val SENDING_STATUS_PENDING = "pending"

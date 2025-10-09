@@ -47,9 +47,9 @@ class MainViewModel(
                 // 기본 이벤트 생성
                 val eventId = eventDao.insertEvent(
                     Event(
-                        eventName = "IFAA 2024",
-                        eventDate = "2024-09-27",
-                        description = "The 21st Congress of the International Federation of Associations of Anatomists",
+                        eventName = "대한해부학회 2025",
+                        eventDate = "2025-10-15",
+                        description = " ",
                         isActive = true
                     )
                 )
@@ -196,7 +196,7 @@ class MainViewModel(
             result.fold(
                 onSuccess = { file ->
                     ExcelWriter.shareExcelFile(context, file)
-                    _message.value = "엑셀 템플릿이 다운로드되었습니다."
+                    _message.value = "csv 템플릿이 다운로드되었습니다."
                 },
                 onFailure = { exception ->
                     _message.value = exception.message ?: "템플릿 생성 중 오류가 발생했습니다."
@@ -234,9 +234,9 @@ class MainViewModel(
             if (activeEvent == null) {
                 val eventId = eventDao.insertEvent(
                     Event(
-                        eventName = "IFAA 2024",
-                        eventDate = "2024-09-27",
-                        description = "The 21st Congress of the International Federation of Associations of Anatomists",
+                        eventName = "대한해부학회 2025",
+                        eventDate = "2025-10-15",
+                        description = " ",
                         isActive = true
                     )
                 )

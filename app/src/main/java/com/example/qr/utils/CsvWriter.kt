@@ -35,7 +35,7 @@ class CsvWriter {
                     writer.append('\uFEFF')
 
                     // CSV Header - QR코드 컬럼 추가
-                    writer.append("성명(국문),성명(영문),성명(한문),휴대폰,면허번호,QR코드,출입시간,출입유형\n")
+                    writer.append("성명(국문),성명(영문),성명(한문),휴대폰,소속,면허번호,QR코드,출입시간,출입유형\n")
 
                     // Data rows - one row per scan record
                     participantScans.forEach { (participant, scanRecords) ->
@@ -43,12 +43,13 @@ class CsvWriter {
                         val englishName = escapeCsv(participant.englishName)
                         val chineseName = escapeCsv(participant.chineseName)
                         val phone = "=\"${participant.phoneNumber}\""
+                        val organization = escapeCsv(participant.organization)
                         val license = escapeCsv(participant.licenseNo)
                         val qrCode = escapeCsv(participant.barcodeData)
 
                         if (scanRecords.isEmpty()) {
                             // Participant with no scans
-                            writer.append("$koreanName,$englishName,$chineseName,$phone,$license,$qrCode,,미입장\n")
+                            writer.append("$koreanName,$englishName,$chineseName,$phone,$organization,$license,$qrCode,,미입장\n")
                         } else {
                             // One row per scan record
                             scanRecords.sortedBy { it.scanTime }.forEach { scan ->
@@ -57,7 +58,7 @@ class CsvWriter {
                                     ScanType.ENTRY -> "입장"
                                     ScanType.EXIT -> "퇴장"
                                 }
-                                writer.append("$koreanName,$englishName,$chineseName,$phone,$license,$qrCode,$scanTime,$scanType\n")
+                                writer.append("$koreanName,$englishName,$chineseName,$phone,$organization,$license,$qrCode,$scanTime,$scanType\n")
                             }
                         }
                     }
@@ -87,7 +88,7 @@ class CsvWriter {
                     writer.append('\uFEFF')
 
                     // CSV Header - QR코드 컬럼 추가
-                    writer.append("성명(국문),성명(영문),성명(한문),휴대폰,면허번호,QR코드\n")
+                    writer.append("성명(국문),성명(영문),성명(한문),휴대폰,소속,면허번호,QR코드\n")
 
                     // Sort by Korean name and export unique participants
                     participants.sortedBy { it.fullName }.forEach { participant ->
@@ -95,10 +96,11 @@ class CsvWriter {
                         val englishName = escapeCsv(participant.englishName)
                         val chineseName = escapeCsv(participant.chineseName)
                         val phone = "=\"${participant.phoneNumber}\""
+                        val organization = escapeCsv(participant.organization)
                         val license = escapeCsv(participant.licenseNo)
                         val qrCode = escapeCsv(participant.barcodeData)
 
-                        writer.append("$koreanName,$englishName,$chineseName,$phone,$license,$qrCode\n")
+                        writer.append("$koreanName,$englishName,$chineseName,$phone,$organization,$license,$qrCode\n")
                     }
                 }
 
@@ -121,11 +123,11 @@ class CsvWriter {
                     writer.append('\uFEFF')
 
                     // CSV Header - QR코드 컬럼 추가 (선택 사항)
-                    writer.append("성명(국문),성명(영문),성명(한문),휴대폰,면허번호,QR코드\n")
+                    writer.append("성명(국문),성명(영문),성명(한문),휴대폰,소속,면허번호,QR코드\n")
 
                     // Add sample rows - QR코드는 비워두면 자동 생성됨
-                    writer.append("홍길동,Hong Gildong,洪吉童,010-1234-5678,12345,\n")
-                    writer.append("김철수,Kim Chulsoo,金哲洙,010-9876-5432,67890,QR_67890\n")
+                    writer.append("홍길동,Hong Gildong,洪吉童,010-1234-5678,서울병원,12345,\n")
+                    writer.append("김철수,Kim Chulsoo,金哲洙,010-9876-5432,부산의료원,67890,QR_67890\n")
                 }
 
                 Result.success(file)

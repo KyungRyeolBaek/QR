@@ -29,15 +29,15 @@ class MonitoringServer(
 
     // 메시지 템플릿 저장소
     private var defaultTemplate = """안녕하세요 {이름}님,
-IFAA 2024 학회에 등록되셨습니다.
+대한해부학회에 등록되셨습니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
-일시: 2024-09-27
-문의: 02-123-4567"""
+일시: 2025-10-15
+문의: 010-8326-9157"""
 
     private var resendTemplate = """{이름}님의 QR 코드를 재전송합니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
-IFAA 2024 학회
-문의: 02-123-4567"""
+대한해부학회
+문의: 010-8326-9157"""
 
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
@@ -967,11 +967,11 @@ IFAA 2024 학회
                                     <div class="upload-content">
                                         <div class="upload-icon">📤</div>
                                         <div class="upload-text">
-                                            <strong>엑셀 파일을 드래그하거나 클릭하여 업로드</strong>
-                                            <small>참가자 명단 엑셀 파일 (.xlsx)</small>
+                                            <strong>csv 파일을 드래그하거나 클릭하여 업로드</strong>
+                                            <small>참가자 명단 csv 파일 (.csv)</small>
                                         </div>
                                     </div>
-                                    <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display: none;">
+                                    <input type="file" id="excel-file-input" accept=".csv,.xlsx,.xls" style="display: none;">
                                     <div class="upload-progress" id="upload-progress" style="display: none;">
                                         <div class="progress-bar">
                                             <div class="progress-fill" id="progress-fill"></div>
@@ -1007,13 +1007,13 @@ IFAA 2024 학회
                             <div class="download-section">
                                 <h3>📥 다운로드</h3>
                                 <button class="download-btn" onclick="downloadExcelData()">
-                                    📊 현재 데이터 엑셀 다운로드
+                                    📊 현재 데이터 csv 다운로드
                                 </button>
                                 <button class="download-btn detailed" onclick="downloadDetailedExcel()">
-                                    📋 상세 데이터 엑셀 다운로드
+                                    📋 상세 데이터 csv 다운로드
                                 </button>
                                 <button class="download-btn template" onclick="downloadTemplate()">
-                                    📄 엑셀 템플릿 다운로드
+                                    📄 csv 템플릿 다운로드
                                 </button>
                             </div>
 
@@ -1684,7 +1684,7 @@ IFAA 2024 학회
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
-                                a.download = 'IFAA2024_attendance_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+                                a.download = '2025_attendance_' + new Date().toISOString().slice(0, 10) + '.csv';
                                 document.body.appendChild(a);
                                 a.click();
                                 document.body.removeChild(a);
@@ -1707,7 +1707,7 @@ IFAA 2024 학회
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
-                                a.download = 'participant_template.xlsx';
+                                a.download = 'participant_template.csv';
                                 document.body.appendChild(a);
                                 a.click();
                                 document.body.removeChild(a);
@@ -1730,7 +1730,7 @@ IFAA 2024 학회
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
-                                a.download = 'participant_detailed_data.xlsx';
+                                a.download = 'participant_detailed_data.csv';
                                 document.body.appendChild(a);
                                 a.click();
                                 document.body.removeChild(a);
@@ -1941,14 +1941,14 @@ IFAA 2024 학회
                         // 기본 템플릿 내용 (실제로는 서버에서 가져와야 함)
                         const templates = {
                             'default': 'Hello {이름},\\n' +
-                                'You have been registered for IFAA 2024 conference.\\n\\n' +
+                                'You have been registered for 2025 conference.\\n\\n' +
                                 'Please present the attached barcode image at the entrance.\\n' +
-                                'Date: 2024-09-27\\n' +
-                                'Contact: 02-123-4567',
+                                'Date: 2025-10-15\\n' +
+                                'Contact: 010-8326-9157',
                             'resend': '{이름} - Resending your barcode.\\n' +
                                 'Please present the attached barcode image at the entrance.\\n' +
-                                'IFAA 2024 Conference\\n' +
-                                'Contact: 02-123-4567'
+                                '2025 Conference\\n' +
+                                'Contact: 010-8326-9157'
                         };
 
                         let message = templates[templateType];
@@ -2450,10 +2450,6 @@ IFAA 2024 학회
     }
 
     private fun handleExcelUpload(session: IHTTPSession): Response {
-        // TODO: Convert to CSV upload
-        return newFixedLengthResponse(Response.Status.NOT_IMPLEMENTED, "application/json",
-            JSONObject().put("error", "Excel upload temporarily disabled").toString())
-        /*
         return try {
             if (session.method != Method.POST) {
                 return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "application/json",
@@ -2463,7 +2459,7 @@ IFAA 2024 학회
             val files = HashMap<String, String>()
             session.parseBody(files)
 
-            val tempFilePath = files["excel-file"]
+            val tempFilePath = files["excel-file"] ?: files["csv-file"]
             if (tempFilePath == null) {
                 return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json",
                     JSONObject().put("error", "No file uploaded").toString())
@@ -2478,11 +2474,8 @@ IFAA 2024 학회
 
             // 임시 파일을 읽어서 처리
             val tempFile = java.io.File(tempFilePath)
-            val inputStream = tempFile.inputStream()
 
             try {
-                val workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(inputStream)
-                val sheet = workbook.getSheetAt(0)
                 val participants = mutableListOf<com.example.qr.data.entity.Participant>()
 
                 // 활성 이벤트 확인 또는 생성
@@ -2491,9 +2484,9 @@ IFAA 2024 학회
                     val eventId = runBlocking {
                         eventDao.insertEvent(
                             com.example.qr.data.entity.Event(
-                                eventName = "IFAA 2024",
-                                eventDate = "2024-09-27",
-                                description = "The 21st Congress of the International Federation of Associations of Anatomists",
+                                eventName = "대한해부학회 2025",
+                                eventDate = "2025-10-15",
+                                description = " ",
                                 isActive = true
                             )
                         )
@@ -2506,59 +2499,61 @@ IFAA 2024 학회
                         JSONObject().put("error", "Failed to create event").toString())
                 }
 
-                // 엑셀 데이터 파싱
-                for (rowIndex in 1..sheet.lastRowNum) {
-                    val row = sheet.getRow(rowIndex) ?: continue
+                // CSV 데이터 파싱
+                tempFile.bufferedReader(Charsets.UTF_8).use { reader ->
+                    // Skip BOM if present
+                    reader.mark(1)
+                    if (reader.read() != 0xFEFF) {
+                        reader.reset()
+                    }
 
-                    try {
-                        val nameCell = row.getCell(0)
-                        val phoneCell = row.getCell(1)
-                        val licenseCell = row.getCell(2)
+                    // Skip header line
+                    reader.readLine()
 
-                        val fullName = when {
-                            nameCell?.cellType == org.apache.poi.ss.usermodel.CellType.STRING ->
-                                nameCell.stringCellValue.trim()
-                            nameCell?.cellType == org.apache.poi.ss.usermodel.CellType.NUMERIC ->
-                                nameCell.numericCellValue.toString().trim()
-                            else -> ""
+                    // Parse data rows
+                    var lineNumber = 2
+                    reader.lineSequence().forEach { line ->
+                        if (line.isNotBlank()) {
+                            try {
+                                val values = line.split(",").map { it.trim() }
+
+                                if (values.size >= 6) {
+                                    val koreanName = values[0].removeCsvQuotes()
+                                    val englishName = values[1].removeCsvQuotes()
+                                    val chineseName = values[2].removeCsvQuotes()
+                                    val phoneNumber = values[3].removeCsvQuotes().removePhoneFormatting()
+                                    val organization = values[4].removeCsvQuotes()
+                                    val licenseNo = values[5].removeCsvQuotes()
+                                    val qrCodeFromCsv = if (values.size > 6) values[6].removeCsvQuotes() else ""
+
+                                    if (koreanName.isNotEmpty() && phoneNumber.isNotEmpty() && licenseNo.isNotEmpty()) {
+                                        val barcodeData = if (qrCodeFromCsv.isNotBlank()) {
+                                            qrCodeFromCsv
+                                        } else {
+                                            "QR_${licenseNo}"
+                                        }
+
+                                        participants.add(
+                                            com.example.qr.data.entity.Participant(
+                                                fullName = koreanName,
+                                                englishName = englishName,
+                                                chineseName = chineseName,
+                                                phoneNumber = phoneNumber,
+                                                organization = organization,
+                                                licenseNo = licenseNo,
+                                                barcodeData = barcodeData,
+                                                eventId = activeEvent.id
+                                            )
+                                        )
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                println("Line $lineNumber processing error: ${e.message}")
+                            }
+                            lineNumber++
                         }
-
-                        val phoneNumber = when {
-                            phoneCell?.cellType == org.apache.poi.ss.usermodel.CellType.STRING ->
-                                phoneCell.stringCellValue.trim()
-                            phoneCell?.cellType == org.apache.poi.ss.usermodel.CellType.NUMERIC ->
-                                phoneCell.numericCellValue.toLong().toString()
-                            else -> ""
-                        }
-
-                        val licenseNo = when {
-                            licenseCell?.cellType == org.apache.poi.ss.usermodel.CellType.STRING ->
-                                licenseCell.stringCellValue.trim()
-                            licenseCell?.cellType == org.apache.poi.ss.usermodel.CellType.NUMERIC ->
-                                licenseCell.numericCellValue.toString().trim()
-                            else -> generateLicenseNumber()
-                        }
-
-                        if (fullName.isNotEmpty() && phoneNumber.isNotEmpty()) {
-                            val barcodeData = generateBarcodeData(fullName, phoneNumber, licenseNo)
-
-                            participants.add(
-                                com.example.qr.data.entity.Participant(
-                                    fullName = fullName,
-                                    phoneNumber = phoneNumber,
-                                    licenseNo = licenseNo.ifEmpty { generateLicenseNumber() },
-                                    barcodeData = barcodeData,
-                                    eventId = activeEvent.id
-                                )
-                            )
-                        }
-                    } catch (e: Exception) {
-                        println("Row processing error: ${e.message}")
                     }
                 }
-
-                workbook.close()
-                inputStream.close()
 
                 // 데이터베이스에 저장
                 val insertedIds = runBlocking { participantDao.insertParticipants(participants) }
@@ -2703,7 +2698,24 @@ IFAA 2024 학회
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                 JSONObject().put("error", "업로드 처리 실패: ${e.message}").toString())
         }
-        */
+    }
+
+    private fun String.removeCsvQuotes(): String {
+        var result = this.trim()
+        // Remove Excel formula format: ="value"
+        if (result.startsWith("=\"") && result.endsWith("\"")) {
+            result = result.substring(2, result.length - 1)
+        }
+        // Remove regular quotes
+        if (result.startsWith("\"") && result.endsWith("\"")) {
+            result = result.substring(1, result.length - 1)
+        }
+        return result.trim()
+    }
+
+    private fun String.removePhoneFormatting(): String {
+        // Remove all non-digit characters except leading +
+        return this.replace(Regex("[^0-9+]"), "")
     }
 
     private suspend fun handleExcelDownload(session: IHTTPSession): Response {

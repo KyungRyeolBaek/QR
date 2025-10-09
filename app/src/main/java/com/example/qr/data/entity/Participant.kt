@@ -11,6 +11,7 @@ data class Participant(
     val englishName: String = "",      // 성명(영문)
     val chineseName: String = "",      // 성명(한문)
     val phoneNumber: String,
+    val organization: String = "",     // 소속
     val licenseNo: String,
     val barcodeData: String,
     val eventId: Long,

@@ -13,6 +13,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.qr.R
 import com.example.qr.ViewModelFactory
 import com.example.qr.databinding.FragmentEventBinding
@@ -57,6 +58,9 @@ class EventFragment : Fragment() {
 
         com.example.qr.utils.CrashLogger.log("EventFragment onViewCreated 시작")
 
+        // Hide bottom navigation bar in EventFragment
+        requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)?.visibility = View.GONE
+
         val factory = ViewModelFactory(requireContext())
         viewModel = ViewModelProvider(this, factory)[EventViewModel::class.java]
 
@@ -73,9 +77,9 @@ class EventFragment : Fragment() {
         // 뒤로가기 버튼 동작 커스터마이징
         backPressedCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                com.example.qr.utils.CrashLogger.log("EventFragment: 뒤로가기 눌림 - 홈 화면으로 이동")
-                // 앱 종료 대신 홈 화면으로 이동
-                findNavController().navigate(R.id.nav_home)
+                com.example.qr.utils.CrashLogger.log("EventFragment: 뒤로가기 눌림 - 모니터링 화면으로 이동")
+                // 앱 종료 대신 모니터링 화면으로 이동
+                findNavController().navigate(R.id.nav_monitoring)
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backPressedCallback!!)
@@ -213,6 +217,7 @@ class EventFragment : Fragment() {
             if (participantInfo == null) {
                 binding.apply {
                     tvFullName.text = ""
+                    tvOrganization.text = ""
                     tvLicenseNo.text = ""
                     tvFirstScanTime.text = ""
                     tvLastScanTime.text = ""
@@ -225,6 +230,7 @@ class EventFragment : Fragment() {
                 com.example.qr.utils.CrashLogger.log("참가자 정보 표시 중: ${participantInfo.participant.fullName}")
                 binding.apply {
                     tvFullName.text = participantInfo.participant.fullName
+                    tvOrganization.text = participantInfo.participant.organization.ifEmpty { "-" }
                     tvLicenseNo.text = participantInfo.participant.licenseNo
 
                     // 입장 시간: 최근 입장 시간 표시
@@ -358,6 +364,10 @@ class EventFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         com.example.qr.utils.CrashLogger.log("❌❌❌ EventFragment onDestroyView - View 파괴됨")
+
+        // Restore bottom navigation bar visibility
+        requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)?.visibility = View.VISIBLE
+
         _binding = null
     }
 }

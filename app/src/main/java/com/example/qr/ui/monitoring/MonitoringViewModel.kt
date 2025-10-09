@@ -206,7 +206,7 @@ class MonitoringViewModel(
                 val eventId = eventDao.insertEvent(
                     Event(
                         eventName = "이벤트",
-                        eventDate = "2024-01-01",
+                        eventDate = "2025-10-15",
                         description = "기본 이벤트",
                         isActive = true
                     )
