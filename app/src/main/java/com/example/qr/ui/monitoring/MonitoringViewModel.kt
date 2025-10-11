@@ -143,7 +143,7 @@ class MonitoringViewModel(
             try {
                 _serverStatus.value = ServerStatus.Starting
 
-                val port = 8080
+                val port = 8443  // HTTPS 포트
                 monitoringServer = MonitoringServer(
                     port = port,
                     participantDao = participantDao,
@@ -155,9 +155,9 @@ class MonitoringViewModel(
                 monitoringServer?.startServer()
 
                 val ipAddress = getLocalIpAddress()
-                val url = "http://$ipAddress:$port"
+                val url = "https://$ipAddress:$port"  // HTTPS 프로토콜 사용
                 _serverStatus.value = ServerStatus.Running(url)
-                _message.value = "모니터링 서버가 시작되었습니다"
+                _message.value = "모니터링 서버가 시작되었습니다 (HTTPS)"
 
             } catch (e: Exception) {
                 _serverStatus.value = ServerStatus.Error(e.message ?: "알 수 없는 오류")

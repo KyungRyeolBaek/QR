@@ -15,7 +15,9 @@
       "Bash(chmod:*)",
       "Bash(/Users/soo/AndroidStudioProjects/QR/check_mms_error.sh:*)",
       "Bash(~/Library/Android/sdk/platform-tools/adb shell dumpsys telephony.registry)",
-      "Bash(/Users/soo/AndroidStudioProjects/QR/verify_mms_ready.sh:*)"
+      "Bash(/Users/soo/AndroidStudioProjects/QR/verify_mms_ready.sh:*)",
+      "Bash(./generate_ssl_keystore.sh:*)",
+      "Bash(keytool:*)"
     ],
     "deny": [],
     "ask": []

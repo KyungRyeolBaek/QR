@@ -18,6 +18,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.security.KeyStore
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLServerSocketFactory
 
 class MonitoringServer(
     private val port: Int,
@@ -2519,7 +2523,8 @@ class MonitoringServer(
                 }
             }
 
-            val result = JSONObject().apply {
+            // Participant 정보를 별도 객체로 생성
+            val participantJson = JSONObject().apply {
                 put("id", participant.id)
                 put("fullName", participant.fullName)
                 put("phoneNumber", participant.phoneNumber)
@@ -2531,6 +2536,12 @@ class MonitoringServer(
                 put("totalScans", scanRecords.size)
                 put("entryCount", scanRecords.count { it.scanType == com.example.qr.data.entity.ScanType.ENTRY })
                 put("exitCount", scanRecords.count { it.scanType == com.example.qr.data.entity.ScanType.EXIT })
+            }
+
+            // success + participant 형식으로 래핑
+            val result = JSONObject().apply {
+                put("success", true)
+                put("participant", participantJson)
             }
 
             newFixedLengthResponse(Response.Status.OK, "application/json", result.toString())
@@ -4428,11 +4439,51 @@ class MonitoringServer(
         }
     }
 
+    /**
+     * SSL을 위한 보안 서버 소켓 팩토리 생성
+     * keystore.jks 파일을 로드하여 HTTPS 지원
+     */
+    private fun makeSecureServerSocketFactory(): SSLServerSocketFactory {
+        try {
+            println("🔐 SSL 인증서 로드 중...")
+
+            // KeyStore 로드 (PKCS12 형식 사용)
+            val keyStore = KeyStore.getInstance("PKCS12")
+            val keystoreStream = context.resources.openRawResource(
+                context.resources.getIdentifier("keystore", "raw", context.packageName)
+            )
+            keyStore.load(keystoreStream, "qrserver123".toCharArray())
+            keystoreStream.close()
+
+            println("✅ SSL 인증서 로드 완료")
+
+            // KeyManagerFactory 초기화
+            val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+            kmf.init(keyStore, "qrserver123".toCharArray())
+
+            // SSLContext 생성
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(kmf.keyManagers, null, null)
+
+            println("✅ SSL 설정 완료")
+
+            return sslContext.serverSocketFactory
+        } catch (e: Exception) {
+            println("❌ SSL 인증서 로드 실패: ${e.message}")
+            e.printStackTrace()
+            throw Exception("SSL 설정 실패: ${e.message}")
+        }
+    }
+
     fun startServer() {
         try {
-            println("🚀 웹 서버 시작 시도 - 포트: $port")
+            println("🚀 HTTPS 웹 서버 시작 시도 - 포트: $port")
+
+            // SSL 활성화
+            makeSecure(makeSecureServerSocketFactory(), null)
+
             start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-            println("✅ 웹 서버 성공적으로 시작됨 - 포트: $port")
+            println("✅ HTTPS 웹 서버 성공적으로 시작됨 - 포트: $port")
         } catch (e: java.net.BindException) {
             println("❌ 포트 충돌: $port 포트가 이미 사용중입니다")
             throw Exception("포트 $port 가 이미 사용중입니다. 다른 포트를 사용하거나 기존 서버를 종료해주세요.")
