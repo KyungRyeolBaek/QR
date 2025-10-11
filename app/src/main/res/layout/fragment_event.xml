@@ -77,7 +77,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            app:layout_constraintGuide_percent="0.20" />
+            app:layout_constraintGuide_percent="0.25" />
 
         <!-- Guideline: 화면의 80% 끝 지점 -->
         <androidx.constraintlayout.widget.Guideline
@@ -85,7 +85,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            app:layout_constraintGuide_percent="0.80" />
+            app:layout_constraintGuide_percent="0.75" />
 
         <TextView
             android:id="@+id/tv_full_name"
@@ -105,6 +105,7 @@
             android:id="@+id/table_layout"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
             android:layout_marginBottom="24dp"
             android:stretchColumns="1"
             app:layout_constraintTop_toBottomOf="@id/tv_full_name"
@@ -227,6 +228,8 @@
             android:id="@+id/tv_status"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp"
             android:text="QR 코드를 스캔해주세요"
             android:textSize="@dimen/status_text_size"
             android:textStyle="bold"
@@ -243,8 +246,9 @@
 
     <View
         android:id="@+id/scan_indicator"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_marginTop="8dp"
         android:layout_marginBottom="16dp"
         android:background="@drawable/scan_success_indicator"
         android:alpha="0"

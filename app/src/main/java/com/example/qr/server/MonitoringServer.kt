@@ -15,6 +15,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 
 class MonitoringServer(
@@ -55,6 +57,7 @@ class MonitoringServer(
             uri == "/api/download-excel" -> runBlocking { handleExcelDownload(session) }
             uri == "/api/download-detailed-excel" -> runBlocking { handleDetailedExcelDownload(session) }
             uri == "/api/download-template" -> runBlocking { handleTemplateDownload(session) }
+            uri.startsWith("/api/barcode-image/") -> serveBarcodeImage(session)
             uri == "/api/send-barcode" -> handleSendBarcode(session)
             uri.startsWith("/api/delete-participant/") -> handleDeleteParticipant(session)
             uri == "/api/delete-participants" -> handleDeleteParticipants(session)
@@ -701,6 +704,18 @@ class MonitoringServer(
                         background: #138496;
                     }
 
+                    .bulk-action-btn.share-btn, .action-btn.share-btn {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                    }
+
+                    .bulk-action-btn.share-btn:hover:not(:disabled), .action-btn.share-btn:hover {
+                        background: linear-gradient(135deg, #5568d3 0%, #6a4291 100%);
+                        transform: translateY(-2px);
+                        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+                    }
+
                     /* 참가자 카드 업데이트 */
                     .participant-card {
                         display: flex;
@@ -986,7 +1001,7 @@ class MonitoringServer(
 
                                     <div class="checkbox-group" style="margin-bottom: 10px;">
                                         <label style="display: flex; align-items: center; cursor: pointer;">
-                                            <input type="checkbox" id="auto-send-barcode" checked style="margin-right: 8px;">
+                                            <input type="checkbox" id="auto-send-barcode" style="margin-right: 8px;">
                                             <span>업로드 완료 후 자동으로 QR 코드 발송</span>
                                         </label>
                                         <small style="color: #666; margin-left: 24px; display: block;">
@@ -1141,8 +1156,9 @@ class MonitoringServer(
                             loadTemplates(); // 템플릿 로드
                             console.log('loadTemplates called');
 
-                            // 30초마다 자동 새로고침
-                            setInterval(loadAllData, 30000);
+                            checkWebShareSupport(); // Web Share API 지원 확인
+                            console.log('checkWebShareSupport called');
+
                             console.log('All initialization completed');
                         } catch (error) {
                             console.error('Initialization error:', error);
@@ -1391,6 +1407,7 @@ class MonitoringServer(
                                     '<button class="action-btn detail-btn" onclick="showParticipantDetail(' + participant.id + ')">상세</button>' +
                                     '<button class="action-btn preview-btn" onclick="previewMessage(' + participant.id + ')">메시지미리보기</button>' +
                                     '<button class="action-btn send-btn" onclick="sendBarcode(' + participant.id + ')">QR 코드발송</button>' +
+                                    '<button class="action-btn share-btn" onclick="shareQrCodeFromMyPhone(' + participant.id + ')" title="내 폰에서 직접 발송 (iOS/Android)">📱 내 폰에서 발송</button>' +
                                     '<button class="action-btn resend-btn" onclick="resendBarcode(' + participant.id + ')">재전송</button>' +
                                     '<button class="action-btn delete-btn" onclick="deleteParticipant(' + participant.id + ')">삭제</button>' +
                                 '</div>' +
@@ -1563,10 +1580,10 @@ class MonitoringServer(
                             const files = e.dataTransfer.files;
                             if (files.length > 0) {
                                 const file = files[0];
-                                if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                                if (file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
                                     handleFileUpload(file);
                                 } else {
-                                    showUploadResult('엑셀 파일(.xlsx, .xls)만 업로드 가능합니다.', false);
+                                    showUploadResult('CSV 또는 엑셀 파일(.csv, .xlsx, .xls)만 업로드 가능합니다.', false);
                                 }
                             }
                         });
@@ -1757,12 +1774,13 @@ class MonitoringServer(
                         const checkedBoxes = document.querySelectorAll('.participant-checkbox-input:checked');
                         const deleteBtn = document.getElementById('bulk-delete-btn');
                         const resendBtn = document.getElementById('bulk-resend-btn');
+                        const sendBtn = document.getElementById('bulk-send-btn');
 
-                        if (deleteBtn && resendBtn) {
-                            const hasSelection = checkedBoxes.length > 0;
-                            deleteBtn.disabled = !hasSelection;
-                            resendBtn.disabled = !hasSelection;
-                        }
+                        const hasSelection = checkedBoxes.length > 0;
+
+                        if (deleteBtn) deleteBtn.disabled = !hasSelection;
+                        if (resendBtn) resendBtn.disabled = !hasSelection;
+                        if (sendBtn) sendBtn.disabled = !hasSelection;
 
                         // 전체 선택 체크박스 상태 업데이트
                         const selectAllCheckbox = document.getElementById('select-all-checkbox');
@@ -1814,7 +1832,7 @@ class MonitoringServer(
                         formData.append('participant_ids', participantIds.join(','));
 
                         fetch('/api/delete-participants', {
-                            method: 'DELETE',
+                            method: 'POST',
                             body: formData
                         })
                         .then(response => response.json())
@@ -1833,29 +1851,57 @@ class MonitoringServer(
                     }
 
                     // 개별 QR 코드 재전송
-                    function resendBarcode(participantId) {
+                    async function resendBarcode(participantId) {
                         if (!confirm('이 참가자에게 QR 코드를 재전송하시겠습니까?')) {
                             return;
                         }
 
-                        alert('QR 코드 재전송 기능은 현재 개발 중입니다.');
-                        // TODO: QR 코드 재전송 API 구현 후 연결
+                        try {
+                            await sendBarcodeWithTemplate(participantId, 'resend');
+                            const participant = allParticipants.find(p => p.id.toString() === participantId.toString());
+                            if (participant) {
+                                alert('✅ ' + participant.fullName + '님에게 QR 코드를 재전송했습니다.');
+                            }
+                        } catch (error) {
+                            alert('❌ ' + error.message);
+                            console.error('Resend barcode error:', error);
+                        }
                     }
 
                     // 선택된 참가자들에게 QR 코드 재전송
-                    function resendBarcodeToSelected() {
-                        const checkedBoxes = document.querySelectorAll('.participant-checkbox-input:checked');
-                        if (checkedBoxes.length === 0) {
-                            alert('QR 코드를 재전송할 참가자를 선택해주세요.');
+                    async function resendBarcodeToSelected() {
+                        const selectedCheckboxes = document.querySelectorAll('.participant-checkbox-input:checked');
+                        if (selectedCheckboxes.length === 0) {
+                            alert('재전송할 참가자를 선택해주세요.');
                             return;
                         }
 
-                        if (!confirm(checkedBoxes.length + '명의 참가자에게 QR 코드를 재전송하시겠습니까?')) {
+                        const participantIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+                        if (!confirm('선택된 ' + participantIds.length + '명에게 QR 코드를 재전송하시겠습니까?')) {
                             return;
                         }
 
-                        alert('대량 QR 코드 재전송 기능은 현재 개발 중입니다.');
-                        // TODO: 대량 QR 코드 재전송 API 구현 후 연결
+                        let successCount = 0;
+                        let failureCount = 0;
+
+                        for (const participantId of participantIds) {
+                            try {
+                                await sendBarcodeWithTemplate(participantId, 'resend');
+                                successCount++;
+                                // 발송 간격 (통신사 제한 방지)
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            } catch (error) {
+                                failureCount++;
+                                console.error('Resend failed for participant ' + participantId + ':', error);
+                            }
+                        }
+
+                        if (failureCount === 0) {
+                            alert('✅ ' + successCount + '명에게 QR 코드 재전송이 완료되었습니다.');
+                        } else {
+                            alert('QR 코드 재전송 완료\\n성공: ' + successCount + '명\\n실패: ' + failureCount + '명');
+                        }
                     }
 
                     // 템플릿 관리 함수들
@@ -1875,7 +1921,7 @@ class MonitoringServer(
 
                     // 새로운 QR 코드 발송 기능들
                     function previewMessage(participantId) {
-                        const participant = allParticipants.find(p => p.id === participantId);
+                        const participant = allParticipants.find(p => p.id.toString() === participantId.toString());
                         if (!participant) {
                             alert('참가자 정보를 찾을 수 없습니다.');
                             return;
@@ -1934,7 +1980,7 @@ class MonitoringServer(
                     }
 
                     function updateMessagePreview(participantId) {
-                        const participant = allParticipants.find(p => p.id === participantId);
+                        const participant = allParticipants.find(p => p.id.toString() === participantId.toString());
                         const templateType = document.getElementById('preview-template-select').value;
                         const contentDiv = document.getElementById('message-content-preview');
 
@@ -1962,46 +2008,153 @@ class MonitoringServer(
                     async function confirmAndSendBarcode(participantId) {
                         const templateType = document.getElementById('preview-template-select').value;
                         closeMessagePreviewModal();
-                        await sendBarcodeWithTemplate(participantId, templateType);
+
+                        try {
+                            await sendBarcodeWithTemplate(participantId, templateType);
+                            const participant = allParticipants.find(p => p.id.toString() === participantId.toString());
+                            if (participant) {
+                                alert('✅ ' + participant.fullName + '님에게 QR 코드를 성공적으로 발송했습니다.');
+                            }
+                        } catch (error) {
+                            alert('❌ ' + error.message);
+                            console.error('Send barcode error:', error);
+                        }
                     }
 
                     async function sendBarcode(participantId) {
-                        await sendBarcodeWithTemplate(participantId, 'default');
+                        try {
+                            await sendBarcodeWithTemplate(participantId, 'default');
+                            const participant = allParticipants.find(p => p.id.toString() === participantId.toString());
+                            if (participant) {
+                                alert('✅ ' + participant.fullName + '님에게 QR 코드를 성공적으로 발송했습니다.');
+                            }
+                        } catch (error) {
+                            alert('❌ ' + error.message);
+                            console.error('Send barcode error:', error);
+                        }
+                    }
+
+                    // Web Share API를 사용한 QR 코드 공유 (내 폰에서 발송)
+                    async function shareQrCodeFromMyPhone(participantId) {
+                        try {
+                            console.log('📱 [WEB_SHARE] QR 코드 공유 시작: 참가자 ID=' + participantId);
+
+                            // Web Share API 지원 확인
+                            if (!navigator.share) {
+                                alert('❌ 이 브라우저는 공유 기능을 지원하지 않습니다.\n\nChrome, Safari, Edge 최신 버전을 사용해주세요.\n\n지원 브라우저:\n• Android: Chrome, Edge, Samsung Internet\n• iOS: Safari (13+)');
+                                console.log('❌ [WEB_SHARE] Web Share API not supported');
+                                return;
+                            }
+
+                            // 참가자 정보 가져오기
+                            console.log('📋 [WEB_SHARE] 참가자 정보 조회 중...');
+                            const response = await fetch('/api/participant-detail/' + participantId);
+                            if (!response.ok) {
+                                throw new Error('참가자 정보를 가져오는데 실패했습니다. (HTTP ' + response.status + ')');
+                            }
+                            const data = await response.json();
+
+                            if (!data.success) {
+                                throw new Error(data.error || '참가자 정보를 찾을 수 없습니다.');
+                            }
+
+                            const participant = data.participant;
+                            console.log('✅ [WEB_SHARE] 참가자 정보 조회 완료: ' + participant.fullName);
+
+                            // QR 코드 이미지 다운로드
+                            console.log('🖼️ [WEB_SHARE] QR 코드 이미지 다운로드 중...');
+                            const imageResponse = await fetch('/api/barcode-image/' + participantId);
+                            if (!imageResponse.ok) {
+                                throw new Error('QR 코드 이미지를 생성하는데 실패했습니다. (HTTP ' + imageResponse.status + ')');
+                            }
+
+                            const blob = await imageResponse.blob();
+                            const fileSizeKB = (blob.size / 1024).toFixed(1);
+                            console.log('✅ [WEB_SHARE] QR 코드 이미지 다운로드 완료: ' + fileSizeKB + 'KB');
+
+                            const fileName = 'QR_' + participant.fullName.replace(/\\s+/g, '_') + '_' + participant.barcodeData + '.png';
+                            const file = new File([blob], fileName, { type: 'image/png' });
+
+                            // 메시지 템플릿 생성 (템플릿 리터럴 사용)
+                            const message = `안녕하세요 ${'$'}{participant.fullName}님,
+대한해부학회에 등록되셨습니다.
+첨부된 QR 코드 이미지를 입장 시 제시해주세요.
+
+일시: 2025-10-15
+문의: 010-8326-9157
+
+📞 수신자: ${'$'}{participant.phoneNumber}
+🔢 QR 코드: ${'$'}{participant.barcodeData}`;
+
+                            console.log('📤 [WEB_SHARE] Web Share API 호출 중...');
+
+                            // Web Share API 호출
+                            await navigator.share({
+                                title: 'QR 코드 - ' + participant.fullName,
+                                text: message,
+                                files: [file]
+                            });
+
+                            console.log('✅ [WEB_SHARE] 공유 완료!');
+                            alert('✅ 공유 완료!\n\n메시지 앱에서 수신자(' + participant.phoneNumber + ')를 선택하고\n전송 버튼을 눌러주세요.');
+
+                        } catch (error) {
+                            if (error.name === 'AbortError') {
+                                // 사용자가 공유를 취소함 (정상 동작)
+                                console.log('ℹ️ [WEB_SHARE] 사용자가 공유를 취소함');
+                            } else {
+                                console.error('❌ [WEB_SHARE] Share error:', error);
+                                alert('❌ 공유 실패: ' + error.message + '\n\n브라우저 콘솔(F12)에서 자세한 오류를 확인하세요.');
+                            }
+                        }
+                    }
+
+                    // Web Share API 지원 여부 확인 및 버튼 표시/숨김
+                    function checkWebShareSupport() {
+                        const isSupported = navigator.share !== undefined;
+
+                        if (!isSupported) {
+                            // 지원되지 않는 경우 관련 버튼 숨기기
+                            const shareButtons = document.querySelectorAll('.share-btn');
+                            shareButtons.forEach(btn => {
+                                btn.style.display = 'none';
+                            });
+                            console.log('ℹ️ Web Share API not supported in this browser');
+                        } else {
+                            console.log('✅ Web Share API supported');
+                        }
+
+                        return isSupported;
                     }
 
                     async function sendBarcodeWithTemplate(participantId, templateType) {
-                        const participant = allParticipants.find(p => p.id === participantId);
+                        const participant = allParticipants.find(p => p.id.toString() === participantId.toString());
                         if (!participant) {
-                            alert('참가자 정보를 찾을 수 없습니다.');
-                            return;
+                            throw new Error('참가자 정보를 찾을 수 없습니다.');
                         }
 
-                        try {
-                            // 발송 상태를 "발송중"으로 업데이트
-                            updateParticipantSendStatus(participantId, 'sending');
+                        // 발송 상태를 "발송중"으로 업데이트
+                        updateParticipantSendStatus(participantId, 'sending');
 
-                            const formData = new FormData();
-                            formData.append('participant_id', participantId);
-                            formData.append('template_type', templateType);
+                        const formData = new FormData();
+                        formData.append('participant_id', participantId);
+                        formData.append('template_type', templateType);
 
-                            const response = await fetch('/api/send-barcode', {
-                                method: 'POST',
-                                body: formData
-                            });
+                        const response = await fetch('/api/send-barcode', {
+                            method: 'POST',
+                            body: formData
+                        });
 
-                            const result = await response.json();
+                        const result = await response.json();
 
-                            if (response.ok && result.success) {
-                                updateParticipantSendStatus(participantId, 'sent');
-                                alert('✅ ' + participant.fullName + '님에게 QR 코드를 성공적으로 발송했습니다.');
-                            } else {
-                                updateParticipantSendStatus(participantId, 'failed');
-                                alert('❌ QR 코드 발송 실패: ' + (result.error || '알 수 없는 오류'));
-                            }
-                        } catch (error) {
+                        if (response.ok && result.success) {
+                            updateParticipantSendStatus(participantId, 'sent');
+                            return true;
+                        } else {
                             updateParticipantSendStatus(participantId, 'failed');
-                            alert('❌ QR 코드 발송 중 오류가 발생했습니다.');
-                            console.error('Send barcode error:', error);
+                            const errorMsg = result.error || '알 수 없는 오류';
+                            const debugInfo = result.debug || '';
+                            throw new Error('QR 코드 발송 실패: ' + errorMsg + (debugInfo ? '\\n\\n' + debugInfo : ''));
                         }
                     }
 
@@ -2014,14 +2167,29 @@ class MonitoringServer(
 
                         const participantIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
-                        if (confirm('선택된 ' + participantIds.length + '명에게 QR 코드를 발송하시겠습니까?')) {
-                            for (const participantId of participantIds) {
+                        if (!confirm('선택된 ' + participantIds.length + '명에게 QR 코드를 발송하시겠습니까?')) {
+                            return;
+                        }
+
+                        let successCount = 0;
+                        let failureCount = 0;
+
+                        for (const participantId of participantIds) {
+                            try {
                                 await sendBarcodeWithTemplate(participantId, 'default');
+                                successCount++;
                                 // 발송 간격 (통신사 제한 방지)
                                 await new Promise(resolve => setTimeout(resolve, 1000));
+                            } catch (error) {
+                                failureCount++;
+                                console.error('Send failed for participant ' + participantId + ':', error);
                             }
+                        }
 
-                            alert(participantIds.length + '명에게 QR 코드 발송이 완료되었습니다.');
+                        if (failureCount === 0) {
+                            alert('✅ ' + successCount + '명에게 QR 코드 발송이 완료되었습니다.');
+                        } else {
+                            alert('QR 코드 발송 완료\\n성공: ' + successCount + '명\\n실패: ' + failureCount + '명');
                         }
                     }
 
@@ -2499,6 +2667,14 @@ class MonitoringServer(
                         JSONObject().put("error", "Failed to create event").toString())
                 }
 
+                // 기존 참가자 데이터 조회 (중복 체크용)
+                val existingParticipants = runBlocking {
+                    participantDao.getParticipantsByEvent(activeEvent.id).first()
+                }
+                val existingLicenseNos = existingParticipants.map { it.licenseNo }.toSet()
+                val existingPhoneNumbers = existingParticipants.map { it.phoneNumber }.toSet()
+                var duplicateCount = 0
+
                 // CSV 데이터 파싱
                 tempFile.bufferedReader(Charsets.UTF_8).use { reader ->
                     // Skip BOM if present
@@ -2527,24 +2703,30 @@ class MonitoringServer(
                                     val qrCodeFromCsv = if (values.size > 6) values[6].removeCsvQuotes() else ""
 
                                     if (koreanName.isNotEmpty() && phoneNumber.isNotEmpty() && licenseNo.isNotEmpty()) {
-                                        val barcodeData = if (qrCodeFromCsv.isNotBlank()) {
-                                            qrCodeFromCsv
+                                        // 중복 체크: 라이센스 번호 또는 전화번호가 이미 존재하는 경우
+                                        if (existingLicenseNos.contains(licenseNo) || existingPhoneNumbers.contains(phoneNumber)) {
+                                            println("⚠️ 중복 참가자 건너뜀 (라인 $lineNumber): $koreanName, 면허번호: $licenseNo, 전화: $phoneNumber")
+                                            duplicateCount++
                                         } else {
-                                            "QR_${licenseNo}"
-                                        }
+                                            val barcodeData = if (qrCodeFromCsv.isNotBlank()) {
+                                                qrCodeFromCsv
+                                            } else {
+                                                "QR_${licenseNo}"
+                                            }
 
-                                        participants.add(
-                                            com.example.qr.data.entity.Participant(
-                                                fullName = koreanName,
-                                                englishName = englishName,
-                                                chineseName = chineseName,
-                                                phoneNumber = phoneNumber,
-                                                organization = organization,
-                                                licenseNo = licenseNo,
-                                                barcodeData = barcodeData,
-                                                eventId = activeEvent.id
+                                            participants.add(
+                                                com.example.qr.data.entity.Participant(
+                                                    fullName = koreanName,
+                                                    englishName = englishName,
+                                                    chineseName = chineseName,
+                                                    phoneNumber = phoneNumber,
+                                                    organization = organization,
+                                                    licenseNo = licenseNo,
+                                                    barcodeData = barcodeData,
+                                                    eventId = activeEvent.id
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
@@ -2561,6 +2743,12 @@ class MonitoringServer(
                 // 임시 파일 삭제
                 tempFile.delete()
 
+                // 중복 체크 결과 로그
+                if (duplicateCount > 0) {
+                    println("⚠️ 중복 참가자 ${duplicateCount}명이 제외되었습니다")
+                }
+                println("✅ 신규 참가자 ${insertedIds.size}명이 추가되었습니다")
+
                 // 자동 발송 처리
                 if (autoSendBarcode && participants.isNotEmpty()) {
                     println("🚀 자동 QR 코드 발송 시작 - ${participants.size}명")
@@ -2571,20 +2759,32 @@ class MonitoringServer(
                             SmsService(context)
                         } catch (e: SecurityException) {
                             println("⚠️ SMS 권한 확인 중 보안 오류: ${e.message}")
+                            val message = if (duplicateCount > 0) {
+                                "참가자 ${insertedIds.size}명 추가 완료 (중복 ${duplicateCount}명 제외). SMS 서비스 초기화 실패로 발송은 수동으로 진행해주세요."
+                            } else {
+                                "참가자 ${insertedIds.size}명 추가 완료. SMS 서비스 초기화 실패로 발송은 수동으로 진행해주세요."
+                            }
                             val result = JSONObject().apply {
                                 put("success", true)
-                                put("message", "참가자 ${insertedIds.size}명 추가 완료. SMS 서비스 초기화 실패로 발송은 수동으로 진행해주세요.")
+                                put("message", message)
                                 put("count", insertedIds.size)
+                                put("duplicates", duplicateCount)
                                 put("auto_send_skipped", true)
                                 put("redirect_to_participants", true)
                             }
                             return newFixedLengthResponse(Response.Status.OK, "application/json", result.toString())
                         } catch (e: Exception) {
                             println("⚠️ SMS 서비스 초기화 실패: ${e.message}")
+                            val message = if (duplicateCount > 0) {
+                                "참가자 ${insertedIds.size}명 추가 완료 (중복 ${duplicateCount}명 제외). SMS 서비스 오류로 발송은 수동으로 진행해주세요."
+                            } else {
+                                "참가자 ${insertedIds.size}명 추가 완료. SMS 서비스 오류로 발송은 수동으로 진행해주세요."
+                            }
                             val result = JSONObject().apply {
                                 put("success", true)
-                                put("message", "참가자 ${insertedIds.size}명 추가 완료. SMS 서비스 오류로 발송은 수동으로 진행해주세요.")
+                                put("message", message)
                                 put("count", insertedIds.size)
+                                put("duplicates", duplicateCount)
                                 put("auto_send_skipped", true)
                                 put("redirect_to_participants", true)
                             }
@@ -2593,10 +2793,16 @@ class MonitoringServer(
 
                         if (!smsService.hasSmsPermission()) {
                             println("⚠️ SMS 권한이 없어 자동 발송을 건너뜁니다")
+                            val message = if (duplicateCount > 0) {
+                                "참가자 ${insertedIds.size}명 추가 완료 (중복 ${duplicateCount}명 제외). SMS 권한이 없어 발송은 수동으로 진행해주세요."
+                            } else {
+                                "참가자 ${insertedIds.size}명 추가 완료. SMS 권한이 없어 발송은 수동으로 진행해주세요."
+                            }
                             val result = JSONObject().apply {
                                 put("success", true)
-                                put("message", "참가자 ${insertedIds.size}명 추가 완료. SMS 권한이 없어 발송은 수동으로 진행해주세요.")
+                                put("message", message)
                                 put("count", insertedIds.size)
+                                put("duplicates", duplicateCount)
                                 put("auto_send_skipped", true)
                                 put("redirect_to_participants", true)
                             }
@@ -2638,19 +2844,21 @@ class MonitoringServer(
 
                         // 발송 결과에 따른 상세 메시지 생성
                         val successRate = if (insertedIds.size > 0) (sendSuccessCount * 100) / insertedIds.size else 0
+                        val duplicateInfo = if (duplicateCount > 0) " (중복 ${duplicateCount}명 제외)" else ""
                         val detailMessage = when {
                             sendFailureCount == 0 ->
-                                "참가자 ${insertedIds.size}명 추가 및 QR 코드 발송 완료 ✅ (성공률 100%)"
+                                "참가자 ${insertedIds.size}명 추가${duplicateInfo} 및 QR 코드 발송 완료 ✅ (성공률 100%)"
                             sendSuccessCount == 0 ->
-                                "참가자 ${insertedIds.size}명 추가 완료. QR 코드 발송 실패 ❌ (모든 발송 실패)"
+                                "참가자 ${insertedIds.size}명 추가 완료${duplicateInfo}. QR 코드 발송 실패 ❌ (모든 발송 실패)"
                             else ->
-                                "참가자 ${insertedIds.size}명 추가 완료. QR 코드 발송 결과: 성공 ${sendSuccessCount}명, 실패 ${sendFailureCount}명 (성공률 ${successRate}%)"
+                                "참가자 ${insertedIds.size}명 추가 완료${duplicateInfo}. QR 코드 발송 결과: 성공 ${sendSuccessCount}명, 실패 ${sendFailureCount}명 (성공률 ${successRate}%)"
                         }
 
                         val result = JSONObject().apply {
                             put("success", true)
                             put("message", detailMessage)
                             put("count", insertedIds.size)
+                            put("duplicates", duplicateCount)
                             put("send_success", sendSuccessCount)
                             put("send_failure", sendFailureCount)
                             put("success_rate", successRate)
@@ -2664,10 +2872,17 @@ class MonitoringServer(
                         println("❌ 자동 QR 코드 발송 오류: ${e.message}")
                         e.printStackTrace()
 
+                        val message = if (duplicateCount > 0) {
+                            "참가자 ${insertedIds.size}명 추가 완료 (중복 ${duplicateCount}명 제외). QR 코드 발송 중 오류 발생: ${e.message}"
+                        } else {
+                            "참가자 ${insertedIds.size}명 추가 완료. QR 코드 발송 중 오류 발생: ${e.message}"
+                        }
+
                         val result = JSONObject().apply {
                             put("success", true)
-                            put("message", "참가자 ${insertedIds.size}명 추가 완료. QR 코드 발송 중 오류 발생: ${e.message}")
+                            put("message", message)
                             put("count", insertedIds.size)
+                            put("duplicates", duplicateCount)
                             put("auto_send_error", true)
                             put("redirect_to_participants", true)
                         }
@@ -2677,10 +2892,17 @@ class MonitoringServer(
                 } else {
                     println("📋 수동 발송 모드 - 참가자 관리 화면으로 이동")
 
+                    val message = if (duplicateCount > 0) {
+                        "성공적으로 ${insertedIds.size}명의 참가자를 추가했습니다 (중복 ${duplicateCount}명 제외)."
+                    } else {
+                        "성공적으로 ${insertedIds.size}명의 참가자를 추가했습니다."
+                    }
+
                     val result = JSONObject().apply {
                         put("success", true)
-                        put("message", "성공적으로 ${insertedIds.size}명의 참가자를 추가했습니다.")
+                        put("message", message)
                         put("count", insertedIds.size)
+                        put("duplicates", duplicateCount)
                         put("auto_send", false)
                         put("redirect_to_participants", true)
                     }
@@ -3076,9 +3298,10 @@ class MonitoringServer(
 
     private fun handleDeleteParticipants(session: IHTTPSession): Response {
         return try {
-            if (session.method != Method.DELETE) {
+            // POST 또는 DELETE 메서드 허용
+            if (session.method != Method.DELETE && session.method != Method.POST) {
                 return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "application/json",
-                    JSONObject().put("error", "DELETE method required").toString())
+                    JSONObject().put("error", "POST or DELETE method required").toString())
             }
 
             // 요청 본문에서 참가자 ID 목록 추출
@@ -3974,6 +4197,89 @@ class MonitoringServer(
     }
 
     /**
+     * QR 코드 이미지 파일 제공 (Web Share API용)
+     */
+    private fun serveBarcodeImage(session: IHTTPSession): Response {
+        return try {
+            // URL에서 참가자 ID 추출: /api/barcode-image/123
+            val participantId = session.uri.split("/").lastOrNull()?.toLongOrNull()
+
+            if (participantId == null) {
+                println("❌ [BARCODE_IMAGE] Invalid participant ID in URI: ${session.uri}")
+                return newFixedLengthResponse(
+                    Response.Status.BAD_REQUEST,
+                    "application/json",
+                    JSONObject().put("error", "Invalid participant ID").toString()
+                )
+            }
+
+            println("📥 [BARCODE_IMAGE] QR 코드 이미지 요청: 참가자 ID=$participantId")
+
+            // 참가자 정보 조회
+            val participant = runBlocking { participantDao.getParticipantById(participantId) }
+            if (participant == null) {
+                println("❌ [BARCODE_IMAGE] 참가자를 찾을 수 없음: ID=$participantId")
+                return newFixedLengthResponse(
+                    Response.Status.NOT_FOUND,
+                    "application/json",
+                    JSONObject().apply {
+                        put("success", false)
+                        put("error", "참가자를 찾을 수 없습니다")
+                    }.toString()
+                )
+            }
+
+            println("📋 [BARCODE_IMAGE] 참가자 정보: ${participant.fullName} (${participant.barcodeData})")
+
+            // QR 코드 이미지 생성
+            val barcodeImageFile = BarcodeImageGenerator.generateSmsOptimizedBarcodeToAppFiles(
+                participant.barcodeData,
+                context
+            )
+
+            if (barcodeImageFile == null || !barcodeImageFile.exists()) {
+                println("❌ [BARCODE_IMAGE] QR 코드 이미지 생성 실패")
+                return newFixedLengthResponse(
+                    Response.Status.INTERNAL_ERROR,
+                    "application/json",
+                    JSONObject().put("error", "Failed to generate QR code image").toString()
+                )
+            }
+
+            val fileSizeKB = barcodeImageFile.length() / 1024
+            println("✅ [BARCODE_IMAGE] QR 코드 이미지 생성 완료: ${barcodeImageFile.name} (${fileSizeKB}KB)")
+
+            // PNG 파일을 스트림으로 반환
+            val inputStream = FileInputStream(barcodeImageFile)
+            val response = newFixedLengthResponse(
+                Response.Status.OK,
+                "image/png",
+                inputStream,
+                barcodeImageFile.length()
+            )
+
+            // 응답 헤더 설정
+            response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+            response.addHeader("Pragma", "no-cache")
+            response.addHeader("Expires", "0")
+            response.addHeader("Content-Disposition", "inline; filename=\"qr-${participant.barcodeData}.png\"")
+            response.addHeader("Access-Control-Allow-Origin", "*")
+
+            println("📤 [BARCODE_IMAGE] QR 코드 이미지 전송 완료: ${participant.fullName}")
+
+            response
+        } catch (e: Exception) {
+            println("❌ [BARCODE_IMAGE] QR 코드 이미지 전송 오류: ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                JSONObject().put("error", "Failed to serve QR code image: ${e.message}").toString()
+            )
+        }
+    }
+
+    /**
      * 개별 QR 코드 발송 처리
      */
     private fun handleSendBarcode(session: IHTTPSession): Response {
@@ -3982,6 +4288,10 @@ class MonitoringServer(
                 return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "application/json",
                     JSONObject().put("error", "POST method required").toString())
             }
+
+            // POST body 파싱 (FormData 처리를 위해 필요)
+            val files = HashMap<String, String>()
+            session.parseBody(files)
 
             val parms = session.parms
             val participantId = parms["participant_id"]?.toLongOrNull()
@@ -3997,8 +4307,12 @@ class MonitoringServer(
             // 참가자 정보 조회
             val participant = runBlocking { participantDao.getParticipantById(participantId) }
             if (participant == null) {
+                println("❌ 참가자를 찾을 수 없음: ID=$participantId")
                 return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
-                    JSONObject().put("error", "참가자를 찾을 수 없습니다").toString())
+                    JSONObject().apply {
+                        put("success", false)
+                        put("error", "참가자를 찾을 수 없습니다")
+                    }.toString())
             }
 
             println("📋 참가자 정보: ${participant.fullName} (${participant.phoneNumber})")
@@ -4007,16 +4321,35 @@ class MonitoringServer(
             val smsService = try {
                 SmsService(context)
             } catch (e: SecurityException) {
+                val errorMsg = "SMS 권한 확인 중 보안 오류: ${e.message}"
+                println("❌ $errorMsg")
                 return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
-                    JSONObject().put("error", "SMS 권한 확인 중 보안 오류: ${e.message}").toString())
+                    JSONObject().apply {
+                        put("success", false)
+                        put("error", errorMsg)
+                        put("debug", "앱 설정에서 SMS 권한을 확인하세요")
+                    }.toString())
             } catch (e: Exception) {
+                val errorMsg = "SMS 서비스 초기화 실패: ${e.message}"
+                println("❌ $errorMsg")
                 return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
-                    JSONObject().put("error", "SMS 서비스 초기화 실패: ${e.message}").toString())
+                    JSONObject().apply {
+                        put("success", false)
+                        put("error", errorMsg)
+                        put("debug", "앱을 재시작하거나 권한을 다시 확인하세요")
+                    }.toString())
             }
 
             if (!smsService.hasSmsPermission()) {
+                val errorMsg = "SMS 발송 권한이 없습니다"
+                println("❌ $errorMsg")
+                println("   권한 상태: ${smsService.getPermissionStatus()}")
                 return newFixedLengthResponse(Response.Status.FORBIDDEN, "application/json",
-                    JSONObject().put("error", "SMS 발송 권한이 없습니다").toString())
+                    JSONObject().apply {
+                        put("success", false)
+                        put("error", errorMsg)
+                        put("debug", "앱 설정 > 권한 > SMS 권한을 허용하세요")
+                    }.toString())
             }
 
             // 메시지 템플릿 선택
@@ -4044,6 +4377,8 @@ class MonitoringServer(
             println("📱 최종 전송 메시지: $finalMessage")
 
             println("📧 MMS QR 코드 전송 시작: ${participant.fullName}")
+            println("   📞 전화번호: ${participant.phoneNumber}")
+            println("   🔢 바코드 데이터: ${participant.barcodeData}")
 
             // MMS로 텍스트 메시지 + QR 코드 이미지 한 번에 전송
             val sendSuccess = smsService.sendBarcodeImageMessage(
@@ -4056,6 +4391,7 @@ class MonitoringServer(
                 println("✅ MMS QR 코드 전송 성공: ${participant.fullName}")
             } else {
                 println("❌ MMS QR 코드 전송 실패: ${participant.fullName}")
+                println("   실패 원인은 위의 로그를 확인하세요 (권한, 네트워크, MMS 설정 등)")
             }
 
             if (sendSuccess) {
@@ -4076,6 +4412,7 @@ class MonitoringServer(
                 val result = JSONObject().apply {
                     put("success", false)
                     put("error", "QR 코드 발송에 실패했습니다")
+                    put("debug", "상세 원인:\n• SMS 권한이 허용되어 있는지 확인\n• 네트워크(WiFi/모바일) 연결 확인\n• 기본 MMS 앱이 설정되어 있는지 확인\n• SIM 카드 상태 확인\n\n※ 앱 로그(adb logcat)를 확인하면 더 자세한 오류 정보를 볼 수 있습니다")
                     put("participant_name", participant.fullName)
                     put("participant_id", participantId)
                 }
