@@ -429,7 +429,10 @@ class MonitoringFragment : Fragment() {
 
         // Participant management observers
         viewModel.participants.observe(viewLifecycleOwner) { participants ->
-            participantAdapter.submitList(participants)
+            participantAdapter.submitList(participants) {
+                // Force RecyclerView to recalculate its height after list is submitted
+                binding.rvParticipants.requestLayout()
+            }
             binding.apply {
                 tvParticipantsCount.text = "${participants.size}명"
                 emptyStateParticipants.visibility = if (participants.isEmpty()) View.VISIBLE else View.GONE

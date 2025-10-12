@@ -19,6 +19,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.security.KeyStore
+import java.security.Security
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocketFactory
@@ -4447,19 +4448,38 @@ class MonitoringServer(
         try {
             println("🔐 SSL 인증서 로드 중...")
 
+            // 보안 프로바이더 정보 출력 (디버깅용)
+            println("📋 사용 가능한 Security Providers:")
+            Security.getProviders().forEach { provider ->
+                println("  - ${provider.name} (${provider.version})")
+            }
+
+            // BouncyCastle Provider 명시적 추가 (호환성 개선)
+            try {
+                val bcProvider = Security.getProvider("BC")
+                    ?: Class.forName("org.bouncycastle.jce.provider.BouncyCastleProvider").newInstance() as java.security.Provider
+                Security.removeProvider("BC")  // 기존 것 제거
+                Security.addProvider(bcProvider)  // 새로 추가
+                println("✅ BouncyCastle Provider 등록 완료")
+            } catch (e: Exception) {
+                println("⚠️ BouncyCastle Provider 등록 실패 (기본 Provider 사용): ${e.message}")
+            }
+
             // KeyStore 로드 (PKCS12 형식 사용)
             val keyStore = KeyStore.getInstance("PKCS12")
             val keystoreStream = context.resources.openRawResource(
                 context.resources.getIdentifier("keystore", "raw", context.packageName)
             )
-            keyStore.load(keystoreStream, "qrserver123".toCharArray())
+
+            val password = "qrserver123".toCharArray()
+            keyStore.load(keystoreStream, password)
             keystoreStream.close()
 
             println("✅ SSL 인증서 로드 완료")
 
             // KeyManagerFactory 초기화
             val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-            kmf.init(keyStore, "qrserver123".toCharArray())
+            kmf.init(keyStore, password)
 
             // SSLContext 생성
             val sslContext = SSLContext.getInstance("TLS")
@@ -4470,6 +4490,7 @@ class MonitoringServer(
             return sslContext.serverSocketFactory
         } catch (e: Exception) {
             println("❌ SSL 인증서 로드 실패: ${e.message}")
+            println("❌ 에러 타입: ${e.javaClass.name}")
             e.printStackTrace()
             throw Exception("SSL 설정 실패: ${e.message}")
         }

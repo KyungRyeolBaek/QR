@@ -434,7 +434,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:nestedScrollingEnabled="false"
-            android:minHeight="200dp"
             tools:listitem="@layout/item_participant" />
 
         <!-- Empty State -->
