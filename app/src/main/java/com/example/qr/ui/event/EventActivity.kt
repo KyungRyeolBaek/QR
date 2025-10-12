@@ -156,7 +156,7 @@ class EventActivity : AppCompatActivity() {
                     tvLicenseNo.text = ""
                     tvFirstScanTime.text = ""
                     tvLastScanTime.text = ""
-                    tvDurationTime.text = "00:00:00"
+                    tvDurationTime.text = ""
                     tvCmeCredits.text = ""
                     tvStatus.text = "QR 코드를 스캔해주세요"
                     tvStatus.setTextColor(getColor(R.color.status_waiting))

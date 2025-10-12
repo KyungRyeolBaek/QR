@@ -1,10 +1,15 @@
 package com.example.qr.server
 
+import com.example.qr.api.ParticipantSyncData
+import com.example.qr.api.SyncEvent
+import com.example.qr.api.SyncMessage
 import com.example.qr.data.dao.EventDao
 import com.example.qr.data.dao.ParticipantDao
 import com.example.qr.data.dao.ScanRecordDao
+import com.example.qr.data.entity.ScanType
 import com.example.qr.service.SmsService
 import com.example.qr.utils.BarcodeImageGenerator
+import com.google.gson.Gson
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoWSD
 import kotlinx.coroutines.CoroutineScope
@@ -14,12 +19,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.security.KeyStore
 import java.security.Security
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocketFactory
@@ -30,9 +39,55 @@ class MonitoringServer(
     private val scanRecordDao: ScanRecordDao,
     private val eventDao: EventDao,
     private val context: android.content.Context
-) : NanoHTTPD(port) {
+) : NanoWSD(port) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val gson = Gson()
+
+    // WebSocket 클라이언트 관리 (Thread-safe)
+    private val wsClients = ConcurrentHashMap.newKeySet<NanoWSD.WebSocket>()
+
+    // Keepalive scheduler (30초마다 ping 전송)
+    private val keepaliveScheduler = Executors.newSingleThreadScheduledExecutor()
+
+    init {
+        // 서버 시작 시 keepalive 스케줄러 시작
+        startKeepalive()
+    }
+
+    /**
+     * Keepalive 스케줄러 시작 - 30초마다 모든 클라이언트에게 ping 전송
+     */
+    private fun startKeepalive() {
+        keepaliveScheduler.scheduleAtFixedRate({
+            try {
+                val pingMessage = SyncMessage.wrap(SyncEvent.Ping())
+                val json = gson.toJson(pingMessage)
+
+                val deadClients = mutableListOf<NanoWSD.WebSocket>()
+                wsClients.forEach { ws ->
+                    try {
+                        ws.send(json)
+                    } catch (t: Throwable) {
+                        println("⚠️ Keepalive 전송 실패: ${t.message}")
+                        deadClients.add(ws)
+                    }
+                }
+
+                // 실패한 클라이언트만 제거
+                deadClients.forEach {
+                    wsClients.remove(it)
+                    println("🗑️ 비활성 클라이언트 제거됨 (남은 클라이언트: ${wsClients.size}개)")
+                }
+
+                if (wsClients.isNotEmpty()) {
+                    println("💓 Keepalive ping 전송 → ${wsClients.size}개 클라이언트")
+                }
+            } catch (e: Exception) {
+                println("❌ Keepalive 스케줄러 오류: ${e.message}")
+            }
+        }, 30, 30, TimeUnit.SECONDS)
+    }
 
     // 메시지 템플릿 저장소
     private var defaultTemplate = """안녕하세요 {이름}님,
@@ -50,8 +105,20 @@ class MonitoringServer(
         val uri = session.uri
         val method = session.method
 
+        // 모든 요청 로깅 (디버깅용)
+        println("🔍 [SERVER] 요청 수신: $method $uri")
+
+        // WebSocket 엔드포인트는 NanoWSD가 처리하도록 super.serve() 호출
+        if (uri == "/ws/sync") {
+            println("🔌 WebSocket 핸드셰이크 요청 수신: $uri")
+            return super.serve(session)
+        }
+
         return when {
             uri == "/" -> serveHomePage()
+            uri == "/api/health" -> handleHealthCheck()
+            uri == "/api/event" -> handleGetEvent()
+            uri == "/api/scan" -> handleScan(session)  // 메소드 체크 제거
             uri == "/api/stats" -> serveStats()
             uri == "/api/participants" -> serveParticipants()
             uri == "/api/participants-by-status" -> serveParticipantsByStatus(session)
@@ -70,6 +137,17 @@ class MonitoringServer(
             uri == "/api/update-template" -> handleUpdateTemplate(session)
             uri.startsWith("/api/") -> newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "API endpoint not found")
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Page not found")
+        }
+    }
+
+    /**
+     * WebSocket 연결 처리
+     */
+    override fun openWebSocket(handshake: IHTTPSession): WebSocket? {
+        return if (handshake.uri == "/ws/sync") {
+            SyncWebSocket(handshake)
+        } else {
+            null
         }
     }
 
@@ -2086,10 +2164,7 @@ class MonitoringServer(
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
 
 일시: 2025-10-15
-문의: 010-8326-9157
-
-📞 수신자: ${'$'}{participant.phoneNumber}
-🔢 QR 코드: ${'$'}{participant.barcodeData}`;
+문의: 010-8326-9157`;
 
                             console.log('📤 [WEB_SHARE] Web Share API 호출 중...');
 
@@ -2384,16 +2459,24 @@ class MonitoringServer(
     private fun serveParticipants(): Response {
         return try {
             val activeEvent = runBlocking { eventDao.getActiveEvent() }
-            val participants = if (activeEvent != null) {
+            val participantsArray = if (activeEvent != null) {
                 val allParticipants = runBlocking { participantDao.getParticipantsByEvent(activeEvent.id).first() }
                 JSONArray().apply {
                     allParticipants.forEach { participant ->
+                        // 스캔 기록 조회
+                        val scanRecords = runBlocking { scanRecordDao.getScanRecordsByParticipant(participant.id).first() }
+                        val lastScan = scanRecords.maxByOrNull { it.scanTime }
+                        val isInside = lastScan?.scanType == com.example.qr.data.entity.ScanType.ENTRY
+
                         val participantJson = JSONObject().apply {
                             put("id", participant.id)
                             put("fullName", participant.fullName)
                             put("phoneNumber", participant.phoneNumber)
                             put("licenseNo", participant.licenseNo)
                             put("barcodeData", participant.barcodeData)
+                            put("scanCount", scanRecords.size)
+                            put("lastScanTime", lastScan?.scanTime)
+                            put("isCurrentlyInside", isInside)
                         }
                         put(participantJson)
                     }
@@ -2401,7 +2484,12 @@ class MonitoringServer(
             } else {
                 JSONArray()
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", participants.toString())
+
+            val response = JSONObject().apply {
+                put("participants", participantsArray)
+            }
+
+            newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
         } catch (e: Exception) {
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                 JSONObject().put("error", e.message).toString())
@@ -4503,8 +4591,9 @@ class MonitoringServer(
             // SSL 활성화
             makeSecure(makeSecureServerSocketFactory(), null)
 
-            start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-            println("✅ HTTPS 웹 서버 성공적으로 시작됨 - 포트: $port")
+            // WebSocket 장시간 연결을 위해 타임아웃을 60초로 설정 (keepalive 30초 + 여유)
+            start(60000, false)  // 60초 = 60000ms
+            println("✅ HTTPS 웹 서버 성공적으로 시작됨 - 포트: $port (WebSocket timeout: 60s)")
         } catch (e: java.net.BindException) {
             println("❌ 포트 충돌: $port 포트가 이미 사용중입니다")
             throw Exception("포트 $port 가 이미 사용중입니다. 다른 포트를 사용하거나 기존 서버를 종료해주세요.")
@@ -4521,9 +4610,415 @@ class MonitoringServer(
         }
     }
 
+    /**
+     * 헬스체크 API - 서버 연결 상태 확인
+     * GET /api/health
+     */
+    private fun handleHealthCheck(): Response {
+        return try {
+            val response = JSONObject().apply {
+                put("status", "ok")
+                put("timestamp", System.currentTimeMillis())
+            }
+            newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+        } catch (e: Exception) {
+            println("❌ 헬스체크 오류: ${e.message}")
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                JSONObject().put("error", e.message).toString()
+            )
+        }
+    }
+
+    /**
+     * 이벤트 정보 API - 활성 이벤트 정보 반환
+     * GET /api/event
+     */
+    private fun handleGetEvent(): Response {
+        return try {
+            println("📅 [API] 이벤트 정보 요청")
+
+            val activeEvent = runBlocking { eventDao.getActiveEvent() }
+
+            if (activeEvent == null) {
+                println("❌ [API] 활성 이벤트 없음")
+                return newFixedLengthResponse(
+                    Response.Status.NOT_FOUND,
+                    "application/json",
+                    JSONObject().apply {
+                        put("error", "활성화된 이벤트가 없습니다")
+                    }.toString()
+                )
+            }
+
+            val response = JSONObject().apply {
+                put("id", activeEvent.id)
+                put("eventName", activeEvent.eventName)
+                put("eventDate", activeEvent.eventDate)
+                put("description", activeEvent.description)
+                put("backgroundColor", activeEvent.backgroundColor)
+                put("textColor", activeEvent.textColor)
+            }
+
+            println("✅ [API] 이벤트 정보 전송: ${activeEvent.eventName}")
+            newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+        } catch (e: Exception) {
+            println("❌ [API] 이벤트 정보 조회 오류: ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                JSONObject().put("error", "이벤트 정보 조회 실패: ${e.message}").toString()
+            )
+        }
+    }
+
+    /**
+     * 스캔 API - 클라이언트 기기에서 바코드 스캔 기록
+     * POST /api/scan
+     */
+    private fun handleScan(session: IHTTPSession): Response {
+        return try {
+            // POST 데이터 읽기
+            val files = HashMap<String, String>()
+            session.parseBody(files)
+            val postData = files["postData"] ?: ""
+
+            println("📱 [API] 스캔 요청 받음: $postData")
+
+            val requestJson = JSONObject(postData)
+            val barcodeData = requestJson.getString("barcodeData")
+
+            println("📱 [API] 바코드 데이터: $barcodeData")
+
+            // 활성 이벤트 확인
+            val activeEvent = runBlocking { eventDao.getActiveEvent() }
+            if (activeEvent == null) {
+                println("❌ [API] 활성 이벤트 없음")
+                return newFixedLengthResponse(
+                    Response.Status.BAD_REQUEST,
+                    "application/json",
+                    JSONObject().apply {
+                        put("success", false)
+                        put("message", "활성화된 이벤트가 없습니다")
+                    }.toString()
+                )
+            }
+
+            // 참가자 조회 (하이픈/언더바 변환 시도)
+            var participant = runBlocking {
+                participantDao.getParticipantByBarcode(barcodeData)
+            }
+
+            // 하이픈(-) ↔ 언더바(_) 변환 후 재시도
+            if (participant == null) {
+                val alternativeCode = when {
+                    barcodeData.contains("-") -> barcodeData.replace("-", "_")
+                    barcodeData.contains("_") -> barcodeData.replace("_", "-")
+                    else -> null
+                }
+
+                if (alternativeCode != null) {
+                    println("🔄 [API] 하이픈/언더바 변환 후 재시도: $barcodeData → $alternativeCode")
+                    participant = runBlocking {
+                        participantDao.getParticipantByBarcode(alternativeCode)
+                    }
+
+                    if (participant != null) {
+                        println("✅ [API] 변환 후 참가자 발견: ${participant.fullName}")
+                    }
+                }
+            }
+
+            if (participant == null) {
+                println("❌ [API] 참가자를 찾을 수 없음: $barcodeData")
+                return newFixedLengthResponse(
+                    Response.Status.NOT_FOUND,
+                    "application/json",
+                    JSONObject().apply {
+                        put("success", false)
+                        put("message", "등록되지 않은 참가자입니다")
+                    }.toString()
+                )
+            }
+
+            // 마지막 스캔 기록 확인
+            val lastScan = runBlocking {
+                scanRecordDao.getScanRecordsByParticipant(participant.id).first()
+                    .maxByOrNull { it.scanTime }
+            }
+
+            // 입장/퇴장 판단
+            val scanType = if (lastScan == null || lastScan.scanType == com.example.qr.data.entity.ScanType.EXIT) {
+                com.example.qr.data.entity.ScanType.ENTRY
+            } else {
+                com.example.qr.data.entity.ScanType.EXIT
+            }
+
+            // 스캔 기록 저장
+            val scanTime = System.currentTimeMillis()
+            val scanRecord = com.example.qr.data.entity.ScanRecord(
+                participantId = participant.id,
+                eventId = activeEvent.id,
+                scanTime = scanTime,
+                scanType = scanType
+            )
+
+            runBlocking {
+                scanRecordDao.insertScanRecord(scanRecord)
+            }
+
+            val scanTypeStr = if (scanType == com.example.qr.data.entity.ScanType.ENTRY) "ENTRY" else "EXIT"
+            println("✅ [API] 스캔 기록 저장 완료: ${participant.fullName} - $scanTypeStr")
+
+            // WebSocket으로 실시간 broadcast
+            broadcastEvent(SyncEvent.ScanRecorded(
+                participantId = participant.id,
+                participantName = participant.fullName,
+                scanType = scanType,
+                scanTime = scanTime
+            ))
+
+            // 통계 업데이트도 broadcast
+            runBlocking {
+                val totalParticipants = participantDao.getTotalParticipantCount().first()
+                val currentInside = scanRecordDao.getCurrentInsideCount(activeEvent.id).first()
+                val totalVisits = scanRecordDao.getTotalScanCount().first()
+
+                broadcastEvent(SyncEvent.StatsUpdated(
+                    totalParticipants = totalParticipants,
+                    currentInside = currentInside,
+                    totalVisits = totalVisits
+                ))
+            }
+
+            // 스캔 통계 정보 수집 (클라이언트 모드 UI 표시용)
+            val scanStats = runBlocking {
+                val lastEntry = scanRecordDao.getLastScanByType(participant.id, activeEvent.id, com.example.qr.data.entity.ScanType.ENTRY)
+                val totalScans = scanRecordDao.getScanRecordCountByParticipant(participant.id, activeEvent.id)
+                val isCurrentlyInside = scanType == com.example.qr.data.entity.ScanType.ENTRY
+
+                JSONObject().apply {
+                    put("firstScanTime", lastEntry?.scanTime)
+                    put("lastScanTime", scanTime)
+                    put("totalScans", totalScans)
+                    put("isCurrentlyInside", isCurrentlyInside)
+                }
+            }
+
+            // 응답 생성
+            val response = JSONObject().apply {
+                put("success", true)
+                put("message", "스캔 기록이 저장되었습니다")
+                put("scanType", scanTypeStr)
+                put("scanTime", scanTime)
+                put("participant", JSONObject().apply {
+                    put("id", participant.id)
+                    put("fullName", participant.fullName)
+                    put("phoneNumber", participant.phoneNumber)
+                    put("organization", participant.organization)
+                    put("licenseNo", participant.licenseNo)
+                    put("barcodeData", participant.barcodeData)
+                })
+                put("scanStats", scanStats)
+            }
+
+            newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+
+        } catch (e: JSONException) {
+            println("❌ [API] JSON 파싱 오류: ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(
+                Response.Status.BAD_REQUEST,
+                "application/json",
+                JSONObject().apply {
+                    put("success", false)
+                    put("message", "잘못된 요청 형식입니다")
+                }.toString()
+            )
+        } catch (e: Exception) {
+            println("❌ [API] 스캔 처리 오류: ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                JSONObject().apply {
+                    put("success", false)
+                    put("message", "스캔 처리 중 오류가 발생했습니다: ${e.message}")
+                }.toString()
+            )
+        }
+    }
+
+    /**
+     * WebSocket 핸들러 - 실시간 동기화
+     */
+    inner class SyncWebSocket(handshakeRequest: IHTTPSession) : WebSocket(handshakeRequest) {
+
+        override fun onOpen() {
+            wsClients.add(this)
+            println("🔌 WebSocket 클라이언트 연결됨 (총 ${wsClients.size}개)")
+
+            // 코루틴으로 비동기 전송 (NanoWSD 블로킹 방지)
+            scope.launch {
+                try {
+                    val startTime = System.currentTimeMillis()
+                    println("📊 초기 데이터 준비 시작...")
+
+                    val activeEvent = eventDao.getActiveEvent()
+                    if (activeEvent != null) {
+                        val statsStartTime = System.currentTimeMillis()
+                        val totalParticipants = participantDao.getTotalParticipantCount().first()
+                        val currentInside = scanRecordDao.getCurrentInsideCount(activeEvent.id).first()
+                        val totalVisits = scanRecordDao.getTotalScanCount().first()
+                        println("   통계 조회 완료 (${System.currentTimeMillis() - statsStartTime}ms)")
+
+                        // 참가자 목록 - 기본 정보만 전송 (스캔 기록은 제외하여 성능 최적화)
+                        val participantsStartTime = System.currentTimeMillis()
+                        val participants = participantDao.getParticipantsByEvent(activeEvent.id).first()
+                        println("   참가자 목록 조회 완료: ${participants.size}명 (${System.currentTimeMillis() - participantsStartTime}ms)")
+
+                        // 기본 참가자 정보만 전송 (스캔 상세 정보는 클라이언트에서 별도 요청 시 제공)
+                        val participantSyncData = participants.map { participant ->
+                            ParticipantSyncData(
+                                id = participant.id,
+                                fullName = participant.fullName,
+                                phoneNumber = participant.phoneNumber,
+                                licenseNo = participant.licenseNo,
+                                barcodeData = participant.barcodeData,
+                                scanCount = 0,           // 초기 연결 시에는 0
+                                lastScanTime = null,      // 초기 연결 시에는 null
+                                isCurrentlyInside = false // 초기 연결 시에는 false
+                            )
+                        }
+
+                        val event = SyncEvent.ConnectionEstablished(
+                            totalParticipants = totalParticipants,
+                            currentInside = currentInside,
+                            totalVisits = totalVisits,
+                            participants = participantSyncData
+                        )
+
+                        val serializeStartTime = System.currentTimeMillis()
+                        val message = SyncMessage.wrap(event)
+                        val json = gson.toJson(message)
+                        val jsonSize = json.length
+                        println("   JSON 직렬화 완료 (${System.currentTimeMillis() - serializeStartTime}ms)")
+
+                        println("📦 초기 데이터 준비 완료 - 크기: ${jsonSize / 1024}KB, 참가자: ${participants.size}명")
+                        println("   총 준비 시간: ${System.currentTimeMillis() - startTime}ms")
+
+                        if (jsonSize > 1024 * 1024) { // 1MB 초과 시 경고
+                            println("⚠️ 경고: 초기 데이터가 1MB를 초과합니다 (${jsonSize / 1024 / 1024}MB)")
+                        }
+
+                        // 비동기 전송으로 NanoWSD 블로킹 방지
+                        val sendStartTime = System.currentTimeMillis()
+                        send(json)
+                        println("✅ 초기 데이터 전송 완료: ${participants.size}명, ${jsonSize / 1024}KB (전송 시간: ${System.currentTimeMillis() - sendStartTime}ms)")
+                        println("   전체 처리 시간: ${System.currentTimeMillis() - startTime}ms")
+                    } else {
+                        println("⚠️ 활성 이벤트가 없어 초기 데이터를 전송하지 않습니다")
+                    }
+
+                } catch (e: Exception) {
+                    println("❌ WebSocket 초기 데이터 전송 오류: ${e.javaClass.simpleName} - ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        override fun onClose(
+            code: WebSocketFrame.CloseCode?,
+            reason: String?,
+            initiatedByRemote: Boolean
+        ) {
+            wsClients.remove(this)
+            println("🔌 WebSocket 클라이언트 연결 해제됨: code=$code, reason=$reason (총 ${wsClients.size}개)")
+        }
+
+        override fun onMessage(message: WebSocketFrame) {
+            try {
+                val text = message.textPayload
+                println("📩 WebSocket 메시지 수신: $text")
+
+                // Ping/Pong 처리
+                val syncMessage = gson.fromJson(text, SyncMessage::class.java)
+                if (syncMessage.type == "Ping") {
+                    val pongMessage = SyncMessage.wrap(SyncEvent.Pong())
+                    send(gson.toJson(pongMessage))
+                } else if (syncMessage.type == "Pong") {
+                    println("🏓 Pong 수신 - 클라이언트 응답 확인")
+                }
+            } catch (e: Exception) {
+                println("❌ WebSocket 메시지 처리 오류: ${e.message}")
+            }
+        }
+
+        override fun onPong(pong: WebSocketFrame) {
+            println("🏓 Pong 수신")
+        }
+
+        override fun onException(exception: IOException) {
+            println("❌ WebSocket 예외 발생: ${exception.javaClass.simpleName} - ${exception.message}")
+            exception.printStackTrace()
+
+            // 실패한 소켓만 제거 (에러 메시지 전송하지 않음)
+            wsClients.remove(this)
+            println("   클라이언트 제거됨 (남은 클라이언트: ${wsClients.size}개)")
+        }
+    }
+
+    /**
+     * 모든 WebSocket 클라이언트에게 이벤트 broadcast
+     */
+    private fun broadcastEvent(event: SyncEvent) {
+        scope.launch {
+            val message = SyncMessage.wrap(event)
+            val json = gson.toJson(message)
+
+            val deadClients = mutableListOf<NanoWSD.WebSocket>()
+            wsClients.forEach { client ->
+                try {
+                    client.send(json)
+                } catch (e: Exception) {
+                    println("❌ 클라이언트 broadcast 실패: ${e.message}")
+                    deadClients.add(client)
+                }
+            }
+
+            // 실패한 클라이언트만 제거
+            deadClients.forEach { wsClients.remove(it) }
+
+            println("📡 Broadcast: ${event::class.simpleName} → ${wsClients.size}개 클라이언트")
+        }
+    }
+
     fun stopServer() {
         try {
             println("🛑 웹 서버 종료 시도")
+
+            // Keepalive scheduler 종료
+            keepaliveScheduler.shutdown()
+            try {
+                if (!keepaliveScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    keepaliveScheduler.shutdownNow()
+                }
+            } catch (e: InterruptedException) {
+                keepaliveScheduler.shutdownNow()
+            }
+
+            // WebSocket 클라이언트 모두 닫기
+            wsClients.forEach { client ->
+                try {
+                    client.close(WebSocketFrame.CloseCode.NormalClosure, "Server stopping", false)
+                } catch (e: Exception) {
+                    println("⚠️ WebSocket 클라이언트 종료 중 오류: ${e.message}")
+                }
+            }
+            wsClients.clear()
+
             stop()
             println("✅ 웹 서버 성공적으로 종료됨")
         } catch (e: Exception) {

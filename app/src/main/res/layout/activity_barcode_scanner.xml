@@ -35,6 +35,15 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
+        <View
+            android:id="@+id/connection_indicator"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_marginEnd="8dp"
+            android:layout_gravity="center_vertical"
+            android:background="@drawable/circle_indicator_connected"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/btn_flash"
             android:layout_width="wrap_content"

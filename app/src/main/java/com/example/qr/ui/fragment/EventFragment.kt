@@ -33,6 +33,10 @@ class EventFragment : Fragment() {
     private lateinit var viewModel: EventViewModel
     private var backPressedCallback: OnBackPressedCallback? = null
 
+    // 10초 후 자동 초기화를 위한 Handler
+    private val clearHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var clearRunnable: Runnable? = null
+
     private val scannerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -221,7 +225,7 @@ class EventFragment : Fragment() {
                     tvLicenseNo.text = ""
                     tvFirstScanTime.text = ""
                     tvLastScanTime.text = ""
-                    tvDurationTime.text = "00:00:00"
+                    tvDurationTime.text = ""
                     tvStatus.text = "QR 코드를 스캔해주세요"
                     tvStatus.setTextColor(requireContext().getColor(R.color.status_waiting))
                 }
@@ -261,6 +265,17 @@ class EventFragment : Fragment() {
                     tvStatus.setTextColor(statusColor)
                 }
                 com.example.qr.utils.CrashLogger.log("참가자 정보 표시 완료")
+
+                // 10초 후 자동 초기화 타이머 시작
+                clearRunnable?.let { clearHandler.removeCallbacks(it) }
+                clearRunnable = Runnable {
+                    if (isAdded) {
+                        com.example.qr.utils.CrashLogger.log("⏰ 10초 타이머 만료 - 참가자 정보 초기화")
+                        viewModel.clearCurrentParticipant()
+                    }
+                }
+                clearHandler.postDelayed(clearRunnable!!, 10000) // 10초
+                com.example.qr.utils.CrashLogger.log("⏰ 10초 자동 초기화 타이머 시작")
             }
         } catch (e: Exception) {
             com.example.qr.utils.CrashLogger.log("❌ updateParticipantInfo 오류: ${e.message}")
@@ -364,6 +379,9 @@ class EventFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         com.example.qr.utils.CrashLogger.log("❌❌❌ EventFragment onDestroyView - View 파괴됨")
+
+        // 타이머 취소
+        clearRunnable?.let { clearHandler.removeCallbacks(it) }
 
         // Restore bottom navigation bar visibility
         requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)?.visibility = View.VISIBLE

@@ -1,5 +1,6 @@
 package com.example.qr.ui.event
 
+import android.content.Context
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -17,7 +18,8 @@ import kotlinx.coroutines.launch
 class EventViewModel(
     private val eventDao: EventDao,
     private val participantDao: ParticipantDao,
-    private val scanRecordDao: ScanRecordDao
+    private val scanRecordDao: ScanRecordDao,
+    private val context: Context
 ) : ViewModel() {
 
     private val _activeEvent = MutableLiveData<Event?>()
@@ -40,15 +42,77 @@ class EventViewModel(
     fun loadActiveEvent() {
         viewModelScope.launch {
             try {
-                val event = eventDao.getActiveEvent()
-                _activeEvent.value = event
-                if (event == null) {
-                    _errorMessage.value = "활성화된 이벤트가 없습니다."
+                if (isClientMode()) {
+                    // 클라이언트 모드: 마스터 서버에서 이벤트 정보 가져오기
+                    loadEventFromMaster()
+                } else {
+                    // 마스터 모드: 로컬 DB에서 이벤트 로드
+                    val event = eventDao.getActiveEvent()
+                    _activeEvent.value = event
+                    if (event == null) {
+                        _errorMessage.value = "활성화된 이벤트가 없습니다."
+                    }
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "이벤트 로드 실패: ${e.message}"
             }
         }
+    }
+
+    private suspend fun loadEventFromMaster() {
+        try {
+            val prefs = context.getSharedPreferences("device_settings", Context.MODE_PRIVATE)
+            val masterIp = prefs.getString("master_ip", "") ?: ""
+            val masterServerUrl = normalizeMasterUrl(masterIp)
+
+            if (masterServerUrl.isBlank()) {
+                println("❌ [EVENT] 마스터 서버 주소가 설정되지 않았습니다")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _errorMessage.value = "마스터 서버 주소가 설정되지 않았습니다"
+                }
+                return
+            }
+
+            println("🌐 [EVENT] 마스터 서버에서 이벤트 정보 가져오기: $masterServerUrl")
+            val api = com.example.qr.api.RetrofitClient.createApi(masterServerUrl)
+            val response = api.getEvent()
+
+            if (response.isSuccessful && response.body() != null) {
+                val eventResponse = response.body()!!
+
+                // 서버에서 받은 이벤트 정보를 Event 객체로 변환
+                val event = Event(
+                    id = eventResponse.id,
+                    eventName = eventResponse.eventName,
+                    eventDate = eventResponse.eventDate,
+                    description = eventResponse.description,
+                    backgroundColor = eventResponse.backgroundColor,
+                    textColor = eventResponse.textColor,
+                    isActive = true
+                )
+
+                println("✅ [EVENT] 이벤트 정보 로드 성공: ${event.eventName}")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _activeEvent.value = event
+                }
+            } else {
+                println("❌ [EVENT] HTTP 오류: ${response.code()}")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _errorMessage.value = "이벤트 정보 로드 실패: ${response.code()}"
+                }
+            }
+        } catch (e: Exception) {
+            println("❌ [EVENT] 이벤트 정보 로드 오류: ${e.message}")
+            e.printStackTrace()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _errorMessage.value = "이벤트 정보 로드 실패: ${e.message}"
+            }
+        }
+    }
+
+    private fun isClientMode(): Boolean {
+        val prefs = context.getSharedPreferences("device_settings", Context.MODE_PRIVATE)
+        return !prefs.getBoolean("is_master_mode", true)
     }
 
     fun processBarcodeScanned(barcodeData: String) {
@@ -76,7 +140,114 @@ class EventViewModel(
                 println("🔍 [SCAN_START] QR 코드 스캔 시작: $barcodeData")
                 com.example.qr.utils.CrashLogger.log("🔍 [SCAN_START] QR 코드 스캔 시작: $barcodeData")
 
-                // ===== STEP 1: 이벤트 확인만 실행 =====
+                // ===== STEP 1: 클라이언트 모드 체크 =====
+                // 클라이언트 모드에서는 마스터 서버로 API 요청
+                if (isClientMode()) {
+                    println("📡 [SCAN_MODE] 클라이언트 모드 - 마스터 서버로 전송")
+                    com.example.qr.utils.CrashLogger.log("📡 클라이언트 모드 - 마스터 서버로 전송")
+
+                    // 마스터 서버 URL 가져오기
+                    val prefs = context.getSharedPreferences("device_settings", android.content.Context.MODE_PRIVATE)
+                    val masterIp = prefs.getString("master_ip", "") ?: ""
+                    val masterServerUrl = normalizeMasterUrl(masterIp)
+
+                    if (masterServerUrl.isBlank()) {
+                        println("❌ [SCAN_ERROR] 마스터 서버 주소가 설정되지 않았습니다")
+                        com.example.qr.utils.CrashLogger.log("❌ 마스터 서버 주소 없음")
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            _errorMessage.value = "마스터 서버 주소가 설정되지 않았습니다"
+                        }
+                        isScanning = false
+                        return@launch
+                    }
+
+                    // 마스터 서버 API 호출
+                    try {
+                        println("🌐 [API] 마스터 서버 호출: $masterServerUrl")
+                        val api = com.example.qr.api.RetrofitClient.createApi(masterServerUrl)
+                        val request = com.example.qr.api.ScanRequest(barcodeData = barcodeData)
+                        val response = api.recordScan(request)
+
+                        if (response.isSuccessful && response.body() != null) {
+                            val scanResponse = response.body()!!
+                            if (scanResponse.success) {
+                                val scanTypeKor = if (scanResponse.scanType == "ENTRY") "입장" else "퇴장"
+                                val participantName = scanResponse.participant?.fullName ?: "참가자"
+
+                                println("✅ [API] 스캔 성공: $participantName - $scanTypeKor")
+                                com.example.qr.utils.CrashLogger.log("✅ 스캔 성공: $participantName - $scanTypeKor")
+
+                                // 서버 응답으로 ParticipantWithScanInfo 생성
+                                val participantResponse = scanResponse.participant
+                                val scanStats = scanResponse.scanStats
+
+                                if (participantResponse != null && scanStats != null) {
+                                    val participant = Participant(
+                                        id = participantResponse.id,
+                                        fullName = participantResponse.fullName,
+                                        phoneNumber = participantResponse.phoneNumber,
+                                        organization = participantResponse.organization,
+                                        licenseNo = participantResponse.licenseNo,
+                                        barcodeData = participantResponse.barcodeData,
+                                        eventId = _activeEvent.value?.id ?: 0,
+                                        cmeCredits = 0.0
+                                    )
+
+                                    val scanType = if (scanResponse.scanType == "ENTRY") ScanType.ENTRY else ScanType.EXIT
+
+                                    val participantWithScanInfo = ParticipantWithScanInfo(
+                                        participant = participant,
+                                        firstScanTime = scanStats.firstScanTime,
+                                        lastScanTime = scanStats.lastScanTime,
+                                        lastScanType = scanType,
+                                        totalScans = scanStats.totalScans,
+                                        isCurrentlyInside = scanStats.isCurrentlyInside
+                                    )
+
+                                    println("📊 [API] 참가자 상세 정보 생성 완료: $participantName")
+                                    com.example.qr.utils.CrashLogger.log("📊 참가자 상세 정보 생성 완료")
+
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        _currentParticipant.value = participantWithScanInfo
+                                        _scanSuccess.value = true
+                                        kotlinx.coroutines.delay(50)
+                                        _scanSuccess.value = false
+                                    }
+                                } else {
+                                    println("⚠️ [API] 참가자 또는 스캔 통계 정보 없음")
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        _scanSuccess.value = true
+                                        kotlinx.coroutines.delay(50)
+                                        _scanSuccess.value = false
+                                    }
+                                }
+                            } else {
+                                println("❌ [API] 스캔 실패: ${scanResponse.message}")
+                                com.example.qr.utils.CrashLogger.log("❌ 스캔 실패: ${scanResponse.message}")
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    _errorMessage.value = scanResponse.message ?: "스캔 처리 실패"
+                                }
+                            }
+                        } else {
+                            println("❌ [API] HTTP 오류: ${response.code()}")
+                            com.example.qr.utils.CrashLogger.log("❌ HTTP 오류: ${response.code()}")
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                _errorMessage.value = "서버 응답 오류: ${response.code()}"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        println("❌ [API] 네트워크 오류: ${e.message}")
+                        e.printStackTrace()
+                        com.example.qr.utils.CrashLogger.log("❌ 네트워크 오류: ${e.message}")
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            _errorMessage.value = "서버 연결 실패: ${e.message}"
+                        }
+                    }
+
+                    isScanning = false
+                    return@launch
+                }
+
                 val event = _activeEvent.value
                 com.example.qr.utils.CrashLogger.log("이벤트 확인 중...")
                 if (event == null) {
@@ -414,5 +585,34 @@ class EventViewModel(
                 _errorMessage.value = "테스트 데이터 생성 실패: ${e.message}"
             }
         }
+    }
+
+    /**
+     * 마스터 서버 URL 정규화
+     * - 프로토콜 없으면 https:// 추가
+     * - http://는 https://로 변경
+     * - 포트 없으면 :8443 추가
+     */
+    private fun normalizeMasterUrl(masterIp: String): String {
+        if (masterIp.isBlank()) return ""
+
+        var url = masterIp.trim()
+
+        // 프로토콜 추가 (없으면)
+        if (!url.startsWith("http")) {
+            url = "https://$url"
+        } else if (url.startsWith("http://")) {
+            url = url.replace("http://", "https://")
+        }
+
+        // 포트 추가 (없으면)
+        // 이미 포트가 있는지 확인: https://192.168.0.10:8443 형태
+        val hasPort = url.substringAfter("://").contains(":")
+        if (!hasPort) {
+            url = "$url:8443"
+        }
+
+        println("🔧 [URL] 정규화: $masterIp → $url")
+        return url
     }
 }

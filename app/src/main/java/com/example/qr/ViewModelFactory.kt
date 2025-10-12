@@ -27,7 +27,8 @@ class ViewModelFactory(private val context: Context) : ViewModelProvider.Factory
                 EventViewModel(
                     database.eventDao(),
                     database.participantDao(),
-                    database.scanRecordDao()
+                    database.scanRecordDao(),
+                    context
                 ) as T
             }
             modelClass.isAssignableFrom(MonitoringViewModel::class.java) -> {

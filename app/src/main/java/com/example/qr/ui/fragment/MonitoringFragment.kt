@@ -62,7 +62,8 @@ class MonitoringFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val factory = ViewModelFactory(requireContext())
-        viewModel = ViewModelProvider(this, factory)[MonitoringViewModel::class.java]
+        // Activity-scoped ViewModel로 변경 (탭 전환 시에도 유지)
+        viewModel = ViewModelProvider(requireActivity(), factory)[MonitoringViewModel::class.java]
 
         setupRecyclerView()
         setupParticipantList()
@@ -105,13 +106,76 @@ class MonitoringFragment : Fragment() {
     }
 
     private fun setupUI() {
+        // Load saved mode
+        val prefs = requireContext().getSharedPreferences("device_settings", android.content.Context.MODE_PRIVATE)
+        val isMasterMode = prefs.getBoolean("is_master_mode", true)
+        val masterIp = prefs.getString("master_ip", "") ?: ""
+
         binding.apply {
+            // 모드 선택 설정
+            radioMasterMode.isChecked = isMasterMode
+            radioClientMode.isChecked = !isMasterMode
+            masterIpContainer.visibility = if (isMasterMode) View.GONE else View.VISIBLE
+            etMasterIp.setText(masterIp)
+
+            // 모드 변경 리스너
+            radioGroupDeviceMode.setOnCheckedChangeListener { _, checkedId ->
+                val isMaster = checkedId == radioMasterMode.id
+                masterIpContainer.visibility = if (isMaster) View.GONE else View.VISIBLE
+
+                // 설정 저장
+                prefs.edit().apply {
+                    putBoolean("is_master_mode", isMaster)
+                    if (!isMaster) {
+                        putString("master_ip", etMasterIp.text.toString())
+                    }
+                    apply()
+                }
+
+                // 버튼 텍스트 업데이트
+                updateButtonsForMode(isMaster)
+
+                Toast.makeText(
+                    requireContext(),
+                    if (isMaster) "마스터 모드로 설정되었습니다" else "클라이언트 모드로 설정되었습니다",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+
+            // 마스터 IP 저장
+            etMasterIp.setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) {
+                    prefs.edit().putString("master_ip", etMasterIp.text.toString()).apply()
+                }
+            }
+
+            // 초기 버튼 설정
+            updateButtonsForMode(isMasterMode)
+
             btnStartServer.setOnClickListener {
-                viewModel.startWebServer()
+                val isMaster = prefs.getBoolean("is_master_mode", true)
+                if (isMaster) {
+                    viewModel.startWebServer()
+                } else {
+                    // 클라이언트 모드: 서버 연결
+                    val masterUrl = etMasterIp.text.toString()
+                    if (masterUrl.isBlank()) {
+                        Toast.makeText(requireContext(), "마스터 서버 주소를 입력해주세요", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
+                    prefs.edit().putString("master_ip", masterUrl).apply()
+                    viewModel.connectToMasterServer(masterUrl)
+                }
             }
 
             btnStopServer.setOnClickListener {
-                viewModel.stopWebServer()
+                val isMaster = prefs.getBoolean("is_master_mode", true)
+                if (isMaster) {
+                    viewModel.stopWebServer()
+                } else {
+                    // 클라이언트 모드: 연결 해제
+                    viewModel.disconnectFromMasterServer()
+                }
             }
 
             // 파일 관리 버튼들
@@ -446,6 +510,51 @@ class MonitoringFragment : Fragment() {
                 btnDeleteSelectedParticipants.isEnabled = hasSelection
                 btnSendQrToSelected.isEnabled = hasSelection
                 btnResendQrToSelected.isEnabled = hasSelection
+            }
+        }
+
+        // 클라이언트 연결 상태 observer
+        viewModel.connectionStatus.observe(viewLifecycleOwner) { status ->
+            binding.apply {
+                when (status) {
+                    is MonitoringViewModel.ConnectionStatus.Disconnected -> {
+                        tvServerStatus.text = "연결 안 됨"
+                        btnStartServer.isEnabled = true
+                        btnStopServer.isEnabled = false
+                        tvServerUrl.visibility = View.GONE
+                    }
+                    is MonitoringViewModel.ConnectionStatus.Connecting -> {
+                        tvServerStatus.text = "연결 중..."
+                        btnStartServer.isEnabled = false
+                        btnStopServer.isEnabled = false
+                        tvServerUrl.visibility = View.GONE
+                    }
+                    is MonitoringViewModel.ConnectionStatus.Connected -> {
+                        tvServerStatus.text = "연결됨"
+                        btnStartServer.isEnabled = false
+                        btnStopServer.isEnabled = true
+                        tvServerUrl.text = status.masterUrl
+                        tvServerUrl.visibility = View.VISIBLE
+                    }
+                    is MonitoringViewModel.ConnectionStatus.Error -> {
+                        tvServerStatus.text = "연결 실패: ${status.message}"
+                        btnStartServer.isEnabled = true
+                        btnStopServer.isEnabled = false
+                        tvServerUrl.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateButtonsForMode(isMasterMode: Boolean) {
+        binding.apply {
+            if (isMasterMode) {
+                btnStartServer.text = "서버 시작"
+                btnStopServer.text = "서버 중지"
+            } else {
+                btnStartServer.text = "서버 연결"
+                btnStopServer.text = "연결 해제"
             }
         }
     }

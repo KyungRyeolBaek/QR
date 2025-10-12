@@ -6,6 +6,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.qr.api.ParticipantSyncData
+import com.example.qr.api.SyncEvent
+import com.example.qr.api.SyncMessage
 import com.example.qr.data.dao.EventDao
 import com.example.qr.data.dao.ParticipantDao
 import com.example.qr.data.dao.ScanRecordDao
@@ -19,9 +22,25 @@ import com.example.qr.service.SmsService
 import com.example.qr.ui.adapter.ParticipantWithSelection
 import com.example.qr.ui.adapter.ParticipantScanInfo
 import com.example.qr.data.entity.ScanType
+import com.example.qr.api.RetrofitClient
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import okio.ByteString
 import java.net.NetworkInterface
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 class MonitoringViewModel(
     private val eventDao: EventDao,
@@ -43,6 +62,13 @@ class MonitoringViewModel(
         data class Error(val message: String) : ServerStatus()
     }
 
+    sealed class ConnectionStatus {
+        object Disconnected : ConnectionStatus()
+        object Connecting : ConnectionStatus()
+        data class Connected(val masterUrl: String) : ConnectionStatus()
+        data class Error(val message: String) : ConnectionStatus()
+    }
+
     private val _statistics = MutableLiveData<Statistics>()
     val statistics: LiveData<Statistics> = _statistics
 
@@ -51,6 +77,9 @@ class MonitoringViewModel(
 
     private val _serverStatus = MutableLiveData<ServerStatus>(ServerStatus.Stopped)
     val serverStatus: LiveData<ServerStatus> = _serverStatus
+
+    private val _connectionStatus = MutableLiveData<ConnectionStatus>(ConnectionStatus.Disconnected)
+    val connectionStatus: LiveData<ConnectionStatus> = _connectionStatus
 
     private val _message = MutableLiveData<String>()
     val message: LiveData<String> = _message
@@ -66,27 +95,75 @@ class MonitoringViewModel(
     private var currentStatusFilter = "all"
 
     private var monitoringServer: MonitoringServer? = null
+    private var refreshJob: Job? = null
+    private var masterServerUrl: String = ""
+
+    // WebSocket 클라이언트
+    private var webSocket: WebSocket? = null
+    private val gson = Gson()
+    private var reconnectAttempts = 0
+    private val maxReconnectAttempts = 10
+    private var reconnectJob: Job? = null
+
+    // 연결 안정성 추적
+    private var connectionStartTime: Long = 0
+    private var isStableConnection: Boolean = false
+    private var consecutiveFastFailures: Int = 0
+    private val minConnectionTime: Long = 5000  // 5초
+    private val maxConsecutiveFastFailures: Int = 3
 
     fun loadStatistics() {
         viewModelScope.launch {
             try {
-                val activeEvent = eventDao.getActiveEvent()
-                if (activeEvent != null) {
-                    val totalParticipants = participantDao.getTotalParticipantCount().first()
-                    val currentInside = scanRecordDao.getCurrentInsideCount(activeEvent.id).first()
-                    val totalVisits = scanRecordDao.getTotalScanCount().first()
-
-                    _statistics.value = Statistics(
-                        totalParticipants = totalParticipants,
-                        currentInside = currentInside,
-                        totalVisits = totalVisits
-                    )
+                // 클라이언트 모드인지 확인
+                if (isClientMode() && _connectionStatus.value is ConnectionStatus.Connected) {
+                    // 마스터 서버에서 데이터 가져오기
+                    loadStatisticsFromMaster()
                 } else {
-                    _statistics.value = Statistics(0, 0, 0)
+                    // 로컬 DB에서 데이터 가져오기
+                    loadStatisticsFromLocal()
                 }
             } catch (e: Exception) {
                 _message.value = "통계 로드 실패: ${e.message}"
             }
+        }
+    }
+
+    private suspend fun loadStatisticsFromLocal() {
+        val activeEvent = eventDao.getActiveEvent()
+        if (activeEvent != null) {
+            val totalParticipants = participantDao.getTotalParticipantCount().first()
+            val currentInside = scanRecordDao.getCurrentInsideCount(activeEvent.id).first()
+            val totalVisits = scanRecordDao.getTotalScanCount().first()
+
+            _statistics.value = Statistics(
+                totalParticipants = totalParticipants,
+                currentInside = currentInside,
+                totalVisits = totalVisits
+            )
+        } else {
+            _statistics.value = Statistics(0, 0, 0)
+        }
+    }
+
+    private suspend fun loadStatisticsFromMaster() {
+        try {
+            val api = RetrofitClient.createApi(masterServerUrl)
+            val response = api.getStats()
+
+            if (response.isSuccessful && response.body() != null) {
+                val stats = response.body()!!
+                _statistics.value = Statistics(
+                    totalParticipants = stats.totalParticipants,
+                    currentInside = stats.currentInside,
+                    totalVisits = stats.totalVisits
+                )
+            } else {
+                throw Exception("서버 응답 실패: ${response.code()}")
+            }
+        } catch (e: Exception) {
+            println("❌ 마스터 서버에서 통계 로드 실패: ${e.message}")
+            throw e
         }
     }
 
@@ -488,36 +565,85 @@ class MonitoringViewModel(
             try {
                 currentStatusFilter = statusFilter
 
-                val activeEvent = eventDao.getActiveEvent()
-                if (activeEvent == null) {
-                    _participants.value = emptyList()
-                    allParticipants = emptyList()
-                    return@launch
+                // 클라이언트 모드인지 확인
+                if (isClientMode() && _connectionStatus.value is ConnectionStatus.Connected) {
+                    // 마스터 서버에서 데이터 가져오기
+                    loadParticipantsFromMaster()
+                } else {
+                    // 로컬 DB에서 데이터 가져오기
+                    loadParticipantsFromLocal()
                 }
 
-                val basicParticipants = participantDao.getParticipantsByEvent(activeEvent.id).first()
-
-                val participantsWithInfo = basicParticipants.map { participant ->
-                    val scanRecords = scanRecordDao.getScanRecordsByParticipant(participant.id).first()
-                    val lastScan = scanRecords.maxByOrNull { it.scanTime }
-                    val isInside = lastScan?.scanType == ScanType.ENTRY
-
-                    ParticipantWithSelection(
-                        participant = participant,
-                        isSelected = _selectedParticipants.value?.contains(participant.id) == true,
-                        scanCount = scanRecords.size,
-                        lastScanTime = lastScan?.scanTime,
-                        isCurrentlyInside = isInside
-                    )
-                }
-
-                allParticipants = participantsWithInfo
                 applyStatusFilter()
 
             } catch (e: Exception) {
                 _message.value = "참가자 목록 로드 실패: ${e.message}"
                 _participants.value = emptyList()
             }
+        }
+    }
+
+    private suspend fun loadParticipantsFromLocal() {
+        val activeEvent = eventDao.getActiveEvent()
+        if (activeEvent == null) {
+            _participants.value = emptyList()
+            allParticipants = emptyList()
+            return
+        }
+
+        val basicParticipants = participantDao.getParticipantsByEvent(activeEvent.id).first()
+
+        val participantsWithInfo = basicParticipants.map { participant ->
+            val scanRecords = scanRecordDao.getScanRecordsByParticipant(participant.id).first()
+            val lastScan = scanRecords.maxByOrNull { it.scanTime }
+            val isInside = lastScan?.scanType == ScanType.ENTRY
+
+            ParticipantWithSelection(
+                participant = participant,
+                isSelected = _selectedParticipants.value?.contains(participant.id) == true,
+                scanCount = scanRecords.size,
+                lastScanTime = lastScan?.scanTime,
+                isCurrentlyInside = isInside
+            )
+        }
+
+        allParticipants = participantsWithInfo
+    }
+
+    private suspend fun loadParticipantsFromMaster() {
+        try {
+            val api = RetrofitClient.createApi(masterServerUrl)
+            val response = api.getParticipants()
+
+            if (response.isSuccessful && response.body() != null) {
+                val participantsResponse = response.body()!!
+
+                val participantsWithInfo = participantsResponse.participants.map { apiParticipant ->
+                    val participant = com.example.qr.data.entity.Participant(
+                        id = apiParticipant.id,
+                        eventId = 0, // Not needed for display
+                        fullName = apiParticipant.fullName,
+                        phoneNumber = apiParticipant.phoneNumber,
+                        licenseNo = apiParticipant.licenseNo,
+                        barcodeData = apiParticipant.barcodeData
+                    )
+
+                    ParticipantWithSelection(
+                        participant = participant,
+                        isSelected = _selectedParticipants.value?.contains(apiParticipant.id) == true,
+                        scanCount = apiParticipant.scanCount,
+                        lastScanTime = apiParticipant.lastScanTime,
+                        isCurrentlyInside = apiParticipant.isCurrentlyInside
+                    )
+                }
+
+                allParticipants = participantsWithInfo
+            } else {
+                throw Exception("서버 응답 실패: ${response.code()}")
+            }
+        } catch (e: Exception) {
+            println("❌ 마스터 서버에서 참가자 목록 로드 실패: ${e.message}")
+            throw e
         }
     }
 
@@ -619,8 +745,417 @@ class MonitoringViewModel(
         }
     }
 
+    // Client mode functions
+    fun connectToMasterServer(masterUrl: String) {
+        viewModelScope.launch {
+            try {
+                _connectionStatus.value = ConnectionStatus.Connecting
+
+                // URL 정규화
+                val normalizedUrl = normalizeMasterUrl(masterUrl)
+                masterServerUrl = normalizedUrl
+
+                println("🔧 [URL] 정규화: $masterUrl → $normalizedUrl")
+
+                // Health check 먼저 (REST API)
+                val api = RetrofitClient.createApi(normalizedUrl)
+                val response = api.healthCheck()
+
+                if (!response.isSuccessful) {
+                    throw Exception("서버 응답 실패: ${response.code()}")
+                }
+
+                // WebSocket 연결
+                connectWebSocket(normalizedUrl)
+
+            } catch (e: Exception) {
+                _connectionStatus.value = ConnectionStatus.Error(e.message ?: "연결 실패")
+                _message.value = "서버 연결 실패: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * 마스터 서버 URL 정규화
+     * - 프로토콜 없으면 https:// 추가
+     * - http://는 https://로 변경
+     * - 포트 없으면 :8443 추가
+     */
+    private fun normalizeMasterUrl(masterIp: String): String {
+        if (masterIp.isBlank()) return ""
+
+        var url = masterIp.trim()
+
+        // 프로토콜 추가 (없으면)
+        if (!url.startsWith("http")) {
+            url = "https://$url"
+        } else if (url.startsWith("http://")) {
+            url = url.replace("http://", "https://")
+        }
+
+        // 포트 추가 (없으면)
+        // 이미 포트가 있는지 확인: https://192.168.0.10:8443 형태
+        val hasPort = url.substringAfter("://").contains(":")
+        if (!hasPort) {
+            url = "$url:8443"
+        }
+
+        return url
+    }
+
+    private fun connectWebSocket(masterUrl: String) {
+        try {
+            // 중복 연결 방지
+            if (webSocket != null) {
+                println("⚠️ 이미 WebSocket 연결이 존재합니다 - 중복 연결 방지")
+                return
+            }
+
+            // WebSocket URL 생성 (https → wss)
+            val wsUrl = masterUrl.replace("https://", "wss://").replace("http://", "ws://") + "/ws/sync"
+            println("🔌 WebSocket 연결 시도: $wsUrl")
+
+            // 자체 서명 인증서를 허용하는 TrustManager
+            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            })
+
+            // SSL Context 생성
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, trustAllCerts, SecureRandom())
+
+            val client = OkHttpClient.Builder()
+                .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+                .hostnameVerifier { _, _ -> true }  // 모든 호스트명 허용
+                // pingInterval 제거 - NanoWSD 호환성 문제로 애플리케이션 레벨 JSON Ping/Pong 사용
+                .connectTimeout(30, TimeUnit.SECONDS)  // 대량 데이터 전송을 위해 30초로 증가
+                .readTimeout(0, TimeUnit.SECONDS)  // WebSocket은 timeout 없음
+                .writeTimeout(30, TimeUnit.SECONDS)  // 쓰기 타임아웃도 30초로 설정
+                .build()
+
+            val request = Request.Builder()
+                .url(wsUrl)
+                .build()
+
+            webSocket = client.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    println("✅ WebSocket 연결 성공")
+
+                    // 연결 시간 기록
+                    connectionStartTime = System.currentTimeMillis()
+                    isStableConnection = false  // 초기 데이터 수신 완료 후 true로 설정
+
+                    reconnectAttempts = 0
+                    reconnectJob?.cancel()
+
+                    viewModelScope.launch {
+                        _connectionStatus.value = ConnectionStatus.Connected(masterUrl)
+                        _message.value = "실시간 동기화 연결 중..."
+                    }
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    println("📩 WebSocket 메시지 수신: ${text.take(100)}...")
+
+                    viewModelScope.launch {
+                        handleSyncEvent(text)
+                    }
+                }
+
+                override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                    // Binary message (사용 안 함)
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    println("🔌 WebSocket 종료 중:")
+                    println("   종료 코드: $code")
+                    println("   종료 이유: $reason")
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    val connectionDuration = System.currentTimeMillis() - connectionStartTime
+                    val wasFastFailure = connectionDuration < minConnectionTime
+
+                    println("🔌 WebSocket 연결 종료:")
+                    println("   종료 코드: $code")
+                    println("   종료 이유: $reason")
+                    println("   연결 유지 시간: ${connectionDuration}ms")
+                    println("   안정적인 연결이었음: $isStableConnection")
+                    println("   빠른 실패: $wasFastFailure")
+                    println("   현재 상태: ${_connectionStatus.value}")
+
+                    viewModelScope.launch {
+                        // 정상 종료 코드(1000, 1001)는 재연결하지 않음
+                        if (code == 1000 || code == 1001) {
+                            println("✅ 정상 종료 - 재연결하지 않음 (코드: $code)")
+                            _connectionStatus.value = ConnectionStatus.Disconnected
+                            _message.value = "서버 연결이 종료되었습니다"
+                            this@MonitoringViewModel.webSocket = null
+                            return@launch
+                        }
+
+                        if (_connectionStatus.value is ConnectionStatus.Connected) {
+                            // 빠른 실패 추적
+                            if (wasFastFailure) {
+                                consecutiveFastFailures++
+                                println("⚠️ 연속 빠른 실패 횟수: $consecutiveFastFailures/$maxConsecutiveFastFailures")
+                            }
+
+                            _connectionStatus.value = ConnectionStatus.Error("연결 끊김: $reason")
+                            this@MonitoringViewModel.webSocket = null
+
+                            // 재연결 조건 확인
+                            if (consecutiveFastFailures >= maxConsecutiveFastFailures) {
+                                println("❌ 연속 빠른 실패 횟수 초과 - 재연결 중지")
+                                _message.value = "서버 연결 불안정 - 재연결 중지. 서버 상태를 확인해주세요."
+                            } else if (wasFastFailure && !isStableConnection) {
+                                println("⚠️ 안정적인 연결 확립 전 빠른 실패 - 재연결 시도")
+                                _message.value = "연결이 끊어졌습니다 (${connectionDuration}ms)"
+                                attemptReconnect()
+                            } else if (isStableConnection) {
+                                println("🔄 안정적인 연결이 끊어짐 - 재연결 시도")
+                                _message.value = "연결이 끊어졌습니다 (코드: $code)"
+                                consecutiveFastFailures = 0  // 안정적인 연결이었으므로 리셋
+                                attemptReconnect()
+                            } else {
+                                println("⚠️ 재연결 조건 불충족")
+                                _message.value = "연결 실패 - 서버를 확인해주세요"
+                            }
+                        }
+                    }
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    val connectionDuration = System.currentTimeMillis() - connectionStartTime
+                    val wasFastFailure = connectionDuration < minConnectionTime
+
+                    println("❌ WebSocket 연결 실패:")
+                    println("   예외 타입: ${t.javaClass.simpleName}")
+                    println("   예외 메시지: ${t.message}")
+                    println("   HTTP 응답: ${response?.code} ${response?.message}")
+                    println("   연결 유지 시간: ${connectionDuration}ms")
+                    println("   안정적인 연결이었음: $isStableConnection")
+                    println("   빠른 실패: $wasFastFailure")
+                    println("   현재 상태: ${_connectionStatus.value}")
+                    println("   Stack Trace:")
+                    t.printStackTrace()
+
+                    val errorMessage = when {
+                        t.message?.contains("Trust anchor") == true -> "SSL 인증서 오류"
+                        t.message?.contains("404") == true -> "서버 엔드포인트를 찾을 수 없음"
+                        t.message?.contains("timeout") == true -> "연결 시간 초과"
+                        t.message?.contains("refused") == true -> "서버 연결 거부"
+                        else -> t.message ?: "알 수 없는 오류"
+                    }
+
+                    viewModelScope.launch {
+                        // 빠른 실패 추적
+                        if (wasFastFailure) {
+                            consecutiveFastFailures++
+                            println("⚠️ 연속 빠른 실패 횟수: $consecutiveFastFailures/$maxConsecutiveFastFailures")
+                        }
+
+                        _connectionStatus.value = ConnectionStatus.Error(errorMessage)
+                        this@MonitoringViewModel.webSocket = null
+
+                        // 재연결 조건 확인
+                        if (consecutiveFastFailures >= maxConsecutiveFastFailures) {
+                            println("❌ 연속 빠른 실패 횟수 초과 - 재연결 중지")
+                            _message.value = "연결 실패: $errorMessage\n서버 연결이 불안정합니다. 서버 상태를 확인해주세요."
+                        } else if (wasFastFailure && !isStableConnection) {
+                            println("⚠️ 안정적인 연결 확립 전 빠른 실패 - 재연결 시도")
+                            _message.value = "연결 실패: $errorMessage"
+                            attemptReconnect()
+                        } else if (isStableConnection) {
+                            println("🔄 안정적인 연결이 실패함 - 재연결 시도")
+                            _message.value = "연결 실패: $errorMessage"
+                            consecutiveFastFailures = 0  // 안정적인 연결이었으므로 리셋
+                            attemptReconnect()
+                        } else {
+                            println("⚠️ 재연결 조건 불충족")
+                            _message.value = "연결 실패: $errorMessage\n서버를 확인해주세요"
+                        }
+                    }
+                }
+            })
+
+        } catch (e: Exception) {
+            println("❌ WebSocket 연결 생성 실패: ${e.message}")
+            _connectionStatus.value = ConnectionStatus.Error(e.message ?: "연결 실패")
+        }
+    }
+
+    private suspend fun handleSyncEvent(json: String) {
+        try {
+            // SyncMessage로 파싱하여 타입 확인
+            val syncMessage = gson.fromJson(json, SyncMessage::class.java)
+
+            // 타입별로 data를 적절한 클래스로 재파싱
+            when (syncMessage.type) {
+                "ConnectionEstablished" -> {
+                    val dataJson = gson.toJson(syncMessage.data)
+                    val event = gson.fromJson(dataJson, SyncEvent.ConnectionEstablished::class.java)
+                    handleConnectionEstablished(event)
+                }
+                "ScanRecorded" -> {
+                    val dataJson = gson.toJson(syncMessage.data)
+                    val event = gson.fromJson(dataJson, SyncEvent.ScanRecorded::class.java)
+                    handleScanRecorded(event)
+                }
+                "StatsUpdated" -> {
+                    val dataJson = gson.toJson(syncMessage.data)
+                    val event = gson.fromJson(dataJson, SyncEvent.StatsUpdated::class.java)
+                    handleStatsUpdated(event)
+                }
+                "Ping" -> {
+                    println("🏓 Ping 수신 - Pong 전송")
+                    webSocket?.send(gson.toJson(SyncMessage.wrap(SyncEvent.Pong())))
+                }
+                "Pong" -> {
+                    println("🏓 Pong 수신")
+                }
+                "Error" -> {
+                    val dataJson = gson.toJson(syncMessage.data)
+                    val event = gson.fromJson(dataJson, SyncEvent.Error::class.java)
+                    println("❌ 서버 에러 수신: ${event.message}")
+                    _message.value = "서버 오류: ${event.message}"
+                }
+                else -> {
+                    println("⚠️ 알 수 없는 이벤트 타입: ${syncMessage.type}")
+                }
+            }
+        } catch (e: Exception) {
+            println("❌ 이벤트 처리 실패:")
+            println("   예외 타입: ${e.javaClass.simpleName}")
+            println("   예외 메시지: ${e.message}")
+            println("   Stack Trace:")
+            e.printStackTrace()
+        }
+    }
+
+    private suspend fun handleConnectionEstablished(event: SyncEvent.ConnectionEstablished) {
+        println("✅ 초기 데이터 수신: ${event.participants.size}명")
+
+        // 통계 업데이트
+        _statistics.value = Statistics(
+            totalParticipants = event.totalParticipants,
+            currentInside = event.currentInside,
+            totalVisits = event.totalVisits
+        )
+
+        // 참가자 목록 업데이트
+        allParticipants = event.participants.map { syncData ->
+            val participant = Participant(
+                id = syncData.id,
+                eventId = 0,
+                fullName = syncData.fullName,
+                phoneNumber = syncData.phoneNumber,
+                licenseNo = syncData.licenseNo,
+                barcodeData = syncData.barcodeData
+            )
+
+            ParticipantWithSelection(
+                participant = participant,
+                isSelected = false,
+                scanCount = syncData.scanCount,
+                lastScanTime = syncData.lastScanTime,
+                isCurrentlyInside = syncData.isCurrentlyInside
+            )
+        }
+
+        applyStatusFilter()
+
+        // 초기 데이터 수신 완료 - 안정적인 연결로 표시
+        isStableConnection = true
+        consecutiveFastFailures = 0  // 성공 시 빠른 실패 카운트 리셋
+        _message.value = "실시간 동기화 연결됨"
+        println("🟢 안정적인 연결 확립: ${event.participants.size}명 동기화 완료")
+    }
+
+    private suspend fun handleScanRecorded(event: SyncEvent.ScanRecorded) {
+        println("🔔 스캔 이벤트: ${event.participantName} - ${event.scanType}")
+
+        // 통계 및 참가자 목록 새로고침
+        loadStatistics()
+        loadParticipantsWithFilter(currentStatusFilter)
+    }
+
+    private suspend fun handleStatsUpdated(event: SyncEvent.StatsUpdated) {
+        println("📊 통계 업데이트: ${event.currentInside}명 입장 중")
+
+        _statistics.value = Statistics(
+            totalParticipants = event.totalParticipants,
+            currentInside = event.currentInside,
+            totalVisits = event.totalVisits
+        )
+    }
+
+    private fun attemptReconnect() {
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            println("❌ 최대 재연결 시도 횟수 초과")
+            _message.value = "재연결 실패: 최대 시도 횟수 초과"
+            return
+        }
+
+        reconnectAttempts++
+        val delay = minOf(1000L * (1 shl (reconnectAttempts - 1)), 30000L)  // Exponential backoff (최대 30초)
+
+        println("🔄 재연결 시도 $reconnectAttempts/$maxReconnectAttempts (${delay}ms 후)")
+        _message.value = "재연결 시도 중... ($reconnectAttempts/$maxReconnectAttempts)"
+
+        reconnectJob?.cancel()
+        reconnectJob = viewModelScope.launch {
+            delay(delay)
+            if (masterServerUrl.isNotEmpty()) {
+                connectWebSocket(masterServerUrl)
+            }
+        }
+    }
+
+    fun disconnectFromMasterServer() {
+        viewModelScope.launch {
+            try {
+                // WebSocket 연결 종료
+                webSocket?.close(1000, "User disconnect")
+                webSocket = null
+
+                // 재연결 작업 취소
+                reconnectJob?.cancel()
+                reconnectJob = null
+                reconnectAttempts = 0
+
+                // 연결 추적 변수 리셋
+                connectionStartTime = 0
+                isStableConnection = false
+                consecutiveFastFailures = 0
+
+                _connectionStatus.value = ConnectionStatus.Disconnected
+                masterServerUrl = ""
+                _message.value = "서버 연결이 해제되었습니다"
+
+                // 로컬 데이터로 복귀
+                loadStatistics()
+                loadParticipantsWithFilter()
+            } catch (e: Exception) {
+                _message.value = "연결 해제 실패: ${e.message}"
+            }
+        }
+    }
+
+    private fun isClientMode(): Boolean {
+        val prefs = context.getSharedPreferences("device_settings", Context.MODE_PRIVATE)
+        return !prefs.getBoolean("is_master_mode", true)
+    }
+
     override fun onCleared() {
         super.onCleared()
         monitoringServer?.stopServer()
+
+        // WebSocket 정리
+        webSocket?.close(1000, "ViewModel cleared")
+        webSocket = null
+        reconnectJob?.cancel()
     }
 }
