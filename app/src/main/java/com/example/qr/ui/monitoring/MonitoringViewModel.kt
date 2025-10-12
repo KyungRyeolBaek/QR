@@ -447,7 +447,7 @@ class MonitoringViewModel(
             }
 
             // 저장된 템플릿 불러오기
-            val prefs = context.getSharedPreferences("qr_settings", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("message_templates", Context.MODE_PRIVATE)
             val defaultTemplate = SmsService.DEFAULT_MESSAGE_TEMPLATE
             val defaultResendTemplate = SmsService.RESEND_MESSAGE_TEMPLATE
 
@@ -518,7 +518,7 @@ class MonitoringViewModel(
             }
 
             // 저장된 템플릿 불러오기
-            val prefs = context.getSharedPreferences("qr_settings", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences("message_templates", Context.MODE_PRIVATE)
             val defaultTemplate = SmsService.DEFAULT_MESSAGE_TEMPLATE
             val defaultResendTemplate = SmsService.RESEND_MESSAGE_TEMPLATE
 

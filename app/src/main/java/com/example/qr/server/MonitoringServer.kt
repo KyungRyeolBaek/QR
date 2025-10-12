@@ -89,14 +89,28 @@ class MonitoringServer(
         }, 30, 30, TimeUnit.SECONDS)
     }
 
-    // 메시지 템플릿 저장소
-    private var defaultTemplate = """안녕하세요 {이름}님,
+    // SharedPreferences 초기화
+    private val sharedPreferences = context.getSharedPreferences("message_templates", 0)
+
+    // 메시지 템플릿 저장소 (SharedPreferences에서 로드, 없으면 기본값)
+    private var defaultTemplate = sharedPreferences.getString("default_template", """안녕하세요 {이름}님,
 대한해부학회에 등록되셨습니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
 일시: 2025-10-15
-문의: 010-8326-9157"""
+문의: 010-8326-9157
 
-    private var resendTemplate = """{이름}님의 QR 코드를 재전송합니다.
+{전화번호}""") ?: """안녕하세요 {이름}님,
+대한해부학회에 등록되셨습니다.
+첨부된 QR 코드 이미지를 입장 시 제시해주세요.
+일시: 2025-10-15
+문의: 010-8326-9157
+
+{전화번호}"""
+
+    private var resendTemplate = sharedPreferences.getString("resend_template", """{이름}님의 QR 코드를 재전송합니다.
+첨부된 QR 코드 이미지를 입장 시 제시해주세요.
+대한해부학회
+문의: 010-8326-9157""") ?: """{이름}님의 QR 코드를 재전송합니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
 대한해부학회
 문의: 010-8326-9157"""
@@ -1132,7 +1146,7 @@ class MonitoringServer(
                                     </div>
                                 </div>
                                 <div class="template-help">
-                                    <p>💡 사용 가능한 변수: {이름}, {전화번호}, {라이센스번호}</p>
+                                    <p>💡 사용 가능한 변수: {이름}, {전화번호}, {면허번호}</p>
                                 </div>
                             </div>
                         </div>
@@ -2158,25 +2172,42 @@ class MonitoringServer(
                             const fileName = 'QR_' + participant.fullName.replace(/\\s+/g, '_') + '_' + participant.barcodeData + '.png';
                             const file = new File([blob], fileName, { type: 'image/png' });
 
-                            // 메시지 템플릿 생성 (템플릿 리터럴 사용)
-                            const message = `안녕하세요 ${'$'}{participant.fullName}님,
-대한해부학회에 등록되셨습니다.
-첨부된 QR 코드 이미지를 입장 시 제시해주세요.
+                            // 저장된 템플릿 가져오기
+                            console.log('📋 [WEB_SHARE] 메시지 템플릿 조회 중...');
+                            const templateResponse = await fetch('/api/message-templates');
+                            if (!templateResponse.ok) {
+                                throw new Error('템플릿을 가져오는데 실패했습니다. (HTTP ' + templateResponse.status + ')');
+                            }
+                            const templateData = await templateResponse.json();
+                            let message = templateData.defaultTemplate;
 
-일시: 2025-10-15
-문의: 010-8326-9157`;
+                            // 변수 치환
+                            message = message.replace(/\{이름\}/g, participant.fullName);
+                            message = message.replace(/\{전화번호\}/g, participant.phoneNumber);
+                            message = message.replace(/\{면허번호\}/g, participant.licenseNo);
+                            message = message.replace(/\{바코드\}/g, participant.barcodeData);
+
+                            console.log('✅ [WEB_SHARE] 템플릿 적용 완료');
+
+                            // 전화번호를 클립보드에 복사
+                            try {
+                                await navigator.clipboard.writeText(participant.phoneNumber);
+                                console.log('📋 [WEB_SHARE] 전화번호 클립보드 복사 완료: ' + participant.phoneNumber);
+                            } catch (clipboardError) {
+                                console.warn('⚠️ [WEB_SHARE] 클립보드 복사 실패:', clipboardError);
+                                // 클립보드 복사 실패해도 공유는 계속 진행
+                            }
 
                             console.log('📤 [WEB_SHARE] Web Share API 호출 중...');
 
                             // Web Share API 호출
                             await navigator.share({
-                                title: 'QR 코드 - ' + participant.fullName,
                                 text: message,
                                 files: [file]
                             });
 
                             console.log('✅ [WEB_SHARE] 공유 완료!');
-                            alert('✅ 공유 완료!\n\n메시지 앱에서 수신자(' + participant.phoneNumber + ')를 선택하고\n전송 버튼을 눌러주세요.');
+                            alert('✅ 공유 완료!\n\n📋 전화번호(' + participant.phoneNumber + ')가 클립보드에 복사되었습니다.\n메시지 앱에서 붙여넣기(길게 누르기)로 수신자를 입력하고\n전송 버튼을 눌러주세요.');
 
                         } catch (error) {
                             if (error.name === 'AbortError') {
@@ -2384,13 +2415,15 @@ class MonitoringServer(
                                 return;
                             }
 
-                            const formData = new FormData();
-                            formData.append('template_type', templateType);
-                            formData.append('template_content', templateContent);
-
                             const response = await fetch('/api/update-template', {
                                 method: 'POST',
-                                body: formData
+                                headers: {
+                                    'Content-Type': 'application/json; charset=UTF-8'
+                                },
+                                body: JSON.stringify({
+                                    template_type: templateType,
+                                    template_content: templateContent
+                                })
                             });
 
                             const data = await response.json();
@@ -2919,10 +2952,10 @@ class MonitoringServer(
                             )
                         }
 
-                        // 메시지 템플릿 선택
+                        // 메시지 템플릿 선택 (서버에 저장된 템플릿 사용)
                         val selectedTemplate = when (messageTemplate) {
-                            "resend" -> SmsService.RESEND_MESSAGE_TEMPLATE
-                            else -> SmsService.DEFAULT_MESSAGE_TEMPLATE
+                            "resend" -> resendTemplate
+                            else -> defaultTemplate
                         }
 
                         var sendSuccessCount = 0
@@ -4235,10 +4268,10 @@ class MonitoringServer(
                 put("defaultTemplate", defaultTemplate)
                 put("resendTemplate", resendTemplate)
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", result.toString())
+            newFixedLengthResponse(Response.Status.OK, "application/json; charset=UTF-8", result.toString())
         } catch (e: Exception) {
             println("템플릿 조회 오류: ${e.message}")
-            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=UTF-8",
                 JSONObject().put("error", "템플릿 조회 실패: ${e.message}").toString())
         }
     }
@@ -4249,19 +4282,22 @@ class MonitoringServer(
     private fun handleUpdateTemplate(session: IHTTPSession): Response {
         return try {
             if (session.method != Method.POST) {
-                return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "application/json",
+                return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "application/json; charset=UTF-8",
                     JSONObject().put("error", "POST method required").toString())
             }
 
-            // 요청 본문 파싱
-            val files = HashMap<String, String>()
-            session.parseBody(files)
+            // JSON 본문 파싱 (UTF-8)
+            val bodyLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+            val bodyBytes = ByteArray(bodyLength)
+            session.inputStream.read(bodyBytes)
+            val bodyString = bodyBytes.toString(Charsets.UTF_8)
 
-            val templateType = session.parms["template_type"]
-            val templateContent = session.parms["template_content"]
+            val json = JSONObject(bodyString)
+            val templateType = json.optString("template_type")
+            val templateContent = json.optString("template_content")
 
             if (templateType.isNullOrEmpty() || templateContent.isNullOrEmpty()) {
-                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json",
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json; charset=UTF-8",
                     JSONObject().put("error", "template_type과 template_content가 필요합니다.").toString())
             }
 
@@ -4269,14 +4305,16 @@ class MonitoringServer(
             when (templateType) {
                 "default" -> {
                     defaultTemplate = templateContent
-                    println("기본 템플릿 업데이트됨")
+                    sharedPreferences.edit().putString("default_template", templateContent).apply()
+                    println("기본 템플릿 업데이트됨: $templateContent")
                 }
                 "resend" -> {
                     resendTemplate = templateContent
-                    println("재전송 템플릿 업데이트됨")
+                    sharedPreferences.edit().putString("resend_template", templateContent).apply()
+                    println("재전송 템플릿 업데이트됨: $templateContent")
                 }
                 else -> {
-                    return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json",
+                    return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json; charset=UTF-8",
                         JSONObject().put("error", "잘못된 template_type: $templateType").toString())
                 }
             }
@@ -4286,12 +4324,12 @@ class MonitoringServer(
                 put("message", "템플릿이 성공적으로 업데이트되었습니다.")
                 put("template_type", templateType)
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", result.toString())
+            newFixedLengthResponse(Response.Status.OK, "application/json; charset=UTF-8", result.toString())
 
         } catch (e: Exception) {
             println("템플릿 업데이트 오류: ${e.message}")
             e.printStackTrace()
-            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=UTF-8",
                 JSONObject().put("error", "템플릿 업데이트 실패: ${e.message}").toString())
         }
     }
@@ -4452,10 +4490,10 @@ class MonitoringServer(
                     }.toString())
             }
 
-            // 메시지 템플릿 선택
+            // 메시지 템플릿 선택 (서버에 저장된 템플릿 사용)
             val selectedTemplate = when (templateType) {
-                "resend" -> SmsService.RESEND_MESSAGE_TEMPLATE
-                else -> SmsService.DEFAULT_MESSAGE_TEMPLATE
+                "resend" -> resendTemplate
+                else -> defaultTemplate
             }
 
             // 메시지 포맷팅

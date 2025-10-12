@@ -68,7 +68,10 @@ class SmsService(private val context: Context) {
 대한해부학회에 등록되셨습니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
 일시: 2025-10-15
-문의: 010-8326-9157"""
+문의: 010-8326-9157
+
+{전화번호}
+"""
 
         const val RESEND_MESSAGE_TEMPLATE = """{이름}님의 QR 코드를 재전송합니다.
 첨부된 QR 코드 이미지를 입장 시 제시해주세요.
@@ -315,26 +318,20 @@ class SmsService(private val context: Context) {
                 return false
             }
 
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/*"
-                putExtra(Intent.EXTRA_TEXT, message)
+            // smsto: URI로 수신자 지정
+            val smsToUri = Uri.parse("smsto:$phoneNumber")
+
+            val intent = Intent(Intent.ACTION_SENDTO, smsToUri).apply {
+                putExtra("sms_body", message)
                 putExtra(Intent.EXTRA_STREAM, imageUri)
-                putExtra("address", phoneNumber)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-                // MMS 앱을 우선으로 설정
-                `package` = getDefaultSmsApp() ?: run {
-                    // 기본 MMS 앱이 없으면 일반 공유로 전환
-                    Intent.createChooser(this, "QR 코드 이미지 전송")
-                    return@apply
-                }
             }
 
             context.startActivity(intent)
 
             println("✅ [MANUAL] 수동 전송 화면 열기 완료")
-            println("   📧 메시지 앱이 열렸습니다. 수동으로 전송을 완료해주세요.")
+            println("   📧 메시지 앱이 열렸습니다. 수신자($phoneNumber)가 입력되어 있습니다.")
 
             true
         } catch (e: Exception) {

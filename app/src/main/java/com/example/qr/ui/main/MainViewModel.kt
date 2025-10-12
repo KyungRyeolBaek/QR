@@ -367,11 +367,16 @@ class MainViewModel(
                 return
             }
 
+            // 저장된 템플릿 불러오기
+            val prefs = context.getSharedPreferences("message_templates", Context.MODE_PRIVATE)
+            val defaultTemplate = SmsService.DEFAULT_MESSAGE_TEMPLATE
+            val defaultResendTemplate = SmsService.RESEND_MESSAGE_TEMPLATE
+
             // 메시지 템플릿 선택
             val messageTemplate = if (isResend) {
-                SmsService.RESEND_MESSAGE_TEMPLATE
+                prefs.getString("resend_template", defaultResendTemplate) ?: defaultResendTemplate
             } else {
-                SmsService.DEFAULT_MESSAGE_TEMPLATE
+                prefs.getString("default_template", defaultTemplate) ?: defaultTemplate
             }
 
             _message.value = "QR 코드 발송 시작... (${participants.size}명)"
