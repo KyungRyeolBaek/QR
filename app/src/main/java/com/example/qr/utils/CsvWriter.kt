@@ -26,7 +26,7 @@ class CsvWriter {
             participantScans: List<Pair<Participant, List<ScanRecord>>>
         ): Result<File> {
             return try {
-                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
                 val fileName = "${event.eventName}_상세_${System.currentTimeMillis()}.csv"
                 val file = File(context.getExternalFilesDir(null), fileName)
 
