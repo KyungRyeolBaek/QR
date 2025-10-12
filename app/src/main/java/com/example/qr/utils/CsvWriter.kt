@@ -53,7 +53,7 @@ class CsvWriter {
                         } else {
                             // One row per scan record
                             scanRecords.sortedBy { it.scanTime }.forEach { scan ->
-                                val scanTime = dateFormat.format(Date(scan.scanTime))
+                                val scanTime = "=\"${dateFormat.format(Date(scan.scanTime))}\""
                                 val scanType = when (scan.scanType) {
                                     ScanType.ENTRY -> "입장"
                                     ScanType.EXIT -> "퇴장"
