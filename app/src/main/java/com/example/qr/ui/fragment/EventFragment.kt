@@ -20,6 +20,7 @@ import com.example.qr.databinding.FragmentEventBinding
 import com.example.qr.ui.event.EventViewModel
 import com.example.qr.ui.scanner.BarcodeScannerActivity
 import com.example.qr.data.entity.ParticipantWithScanInfo
+import com.example.qr.utils.EventScreenTexts
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -36,6 +37,21 @@ class EventFragment : Fragment() {
     // 10초 후 자동 초기화를 위한 Handler
     private val clearHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var clearRunnable: Runnable? = null
+
+    // 웹에서 수정 가능한 화면 문구 (없으면 기본 문구)
+    private var screenTexts: Map<String, String> = EventScreenTexts.DEFAULTS
+
+    // 문구가 저장되면 화면에 바로 반영 (리스너는 약한 참조로 보관되므로 필드로 유지)
+    private val screenTextsListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == EventScreenTexts.KEY_UPDATED_AT && isAdded && _binding != null) {
+                applyScreenTexts()
+                // 마스터 모드: 웹에서 바꾼 행사명/날짜를 DB에서 다시 읽음
+                if (isMasterMode()) {
+                    viewModel.loadActiveEvent()
+                }
+            }
+        }
 
     private val scannerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -72,9 +88,47 @@ class EventFragment : Fragment() {
         setupBackPressedHandler()
         observeViewModel()
 
+        applyScreenTexts()
+        requireContext()
+            .getSharedPreferences(EventScreenTexts.PREFS, android.content.Context.MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(screenTextsListener)
+
         com.example.qr.utils.CrashLogger.log("이벤트 로드 중...")
         viewModel.loadActiveEvent()
         com.example.qr.utils.CrashLogger.log("EventFragment 초기화 완료")
+    }
+
+    private fun isMasterMode(): Boolean {
+        val prefs = requireContext().getSharedPreferences("device_settings", android.content.Context.MODE_PRIVATE)
+        return prefs.getBoolean("is_master_mode", true)
+    }
+
+    /**
+     * 저장된 화면 문구를 읽어 항목 이름과 안내/상태 문구에 적용합니다.
+     */
+    private fun applyScreenTexts() {
+        val binding = binding ?: return
+        screenTexts = EventScreenTexts.load(requireContext())
+
+        binding.tvLabelOrganization.text = screenTexts.getValue(EventScreenTexts.KEY_LABEL_ORGANIZATION)
+        binding.tvLabelLicense.text = screenTexts.getValue(EventScreenTexts.KEY_LABEL_LICENSE)
+        binding.tvLabelEntryTime.text = screenTexts.getValue(EventScreenTexts.KEY_LABEL_ENTRY_TIME)
+        binding.tvLabelExitTime.text = screenTexts.getValue(EventScreenTexts.KEY_LABEL_EXIT_TIME)
+        binding.tvLabelDuration.text = screenTexts.getValue(EventScreenTexts.KEY_LABEL_DURATION)
+
+        val current = viewModel.currentParticipant.value
+        binding.tvStatus.text = if (current == null) {
+            screenTexts.getValue(EventScreenTexts.KEY_TEXT_WAITING)
+        } else {
+            displayStatus(current)
+        }
+    }
+
+    /** 상태 문구: 색상 판단은 기존 statusText 그대로 두고, 표시 글자만 바꿉니다. */
+    private fun displayStatus(info: ParticipantWithScanInfo): String = when {
+        info.firstScanTime == null -> info.statusText
+        info.isCurrentlyInside -> screenTexts.getValue(EventScreenTexts.KEY_STATUS_INSIDE)
+        else -> screenTexts.getValue(EventScreenTexts.KEY_STATUS_EXITED)
     }
 
     private fun setupBackPressedHandler() {
@@ -226,7 +280,7 @@ class EventFragment : Fragment() {
                     tvFirstScanTime.text = ""
                     tvLastScanTime.text = ""
                     tvDurationTime.text = ""
-                    tvStatus.text = "QR 코드를 스캔해주세요"
+                    tvStatus.text = screenTexts.getValue(EventScreenTexts.KEY_TEXT_WAITING)
                     tvStatus.setTextColor(requireContext().getColor(R.color.status_waiting))
                 }
                 com.example.qr.utils.CrashLogger.log("빈 정보 표시 완료")
@@ -255,7 +309,7 @@ class EventFragment : Fragment() {
                         tvDurationTime.text = participantInfo.formattedDuration
                     }
 
-                    tvStatus.text = participantInfo.statusText
+                    tvStatus.text = displayStatus(participantInfo)
 
                     val statusColor = when (participantInfo.statusText) {
                         "입장중" -> requireContext().getColor(R.color.status_inside)
@@ -382,6 +436,11 @@ class EventFragment : Fragment() {
 
         // 타이머 취소
         clearRunnable?.let { clearHandler.removeCallbacks(it) }
+
+        // 화면 문구 변경 리스너 해제
+        requireContext()
+            .getSharedPreferences(EventScreenTexts.PREFS, android.content.Context.MODE_PRIVATE)
+            .unregisterOnSharedPreferenceChangeListener(screenTextsListener)
 
         // Restore bottom navigation bar visibility
         requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)?.visibility = View.VISIBLE

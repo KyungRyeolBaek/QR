@@ -120,6 +120,7 @@
                     android:gravity="center"
                     android:paddingStart="0dp"
                     android:paddingEnd="16dp"
+                    android:id="@+id/tv_label_organization"
                     android:text="소속"
                     android:textColor="@color/participant_text_color"
                     android:textSize="@dimen/time_label_text_size" />
@@ -142,6 +143,7 @@
                     android:gravity="center"
                     android:paddingStart="0dp"
                     android:paddingEnd="16dp"
+                    android:id="@+id/tv_label_license"
                     android:text="면허 번호"
                     android:textColor="@color/participant_text_color"
                     android:textSize="@dimen/time_label_text_size" />
@@ -164,6 +166,7 @@
                     android:gravity="center"
                     android:paddingStart="0dp"
                     android:paddingEnd="16dp"
+                    android:id="@+id/tv_label_entry_time"
                     android:text="입장 시간"
                     android:textColor="@color/participant_text_color"
                     android:textSize="@dimen/time_label_text_size" />
@@ -186,6 +189,7 @@
                     android:gravity="center"
                     android:paddingStart="0dp"
                     android:paddingEnd="16dp"
+                    android:id="@+id/tv_label_exit_time"
                     android:text="퇴장 시간"
                     android:textColor="@color/participant_text_color"
                     android:textSize="@dimen/time_label_text_size" />
@@ -208,6 +212,7 @@
                     android:gravity="center"
                     android:paddingStart="0dp"
                     android:paddingEnd="16dp"
+                    android:id="@+id/tv_label_duration"
                     android:text="체류 시간"
                     android:textColor="@color/participant_text_color"
                     android:textSize="@dimen/time_label_text_size" />

@@ -91,6 +91,11 @@ class EventViewModel(
                     isActive = true
                 )
 
+                // 마스터에서 받은 화면 문구를 저장 (이벤트 화면이 변경을 감지해 반영)
+                eventResponse.screenTexts?.let { texts ->
+                    com.example.qr.utils.EventScreenTexts.save(context, texts)
+                }
+
                 println("✅ [EVENT] 이벤트 정보 로드 성공: ${event.eventName}")
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     _activeEvent.value = event

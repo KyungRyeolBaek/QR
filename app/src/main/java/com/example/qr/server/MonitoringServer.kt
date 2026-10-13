@@ -9,6 +9,7 @@ import com.example.qr.data.dao.ScanRecordDao
 import com.example.qr.data.entity.ScanType
 import com.example.qr.service.SmsService
 import com.example.qr.utils.BarcodeImageGenerator
+import com.example.qr.utils.EventScreenTexts
 import com.google.gson.Gson
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoWSD
@@ -132,6 +133,7 @@ class MonitoringServer(
             uri == "/" -> serveHomePage()
             uri == "/api/health" -> handleHealthCheck()
             uri == "/api/event" -> handleGetEvent()
+            uri == "/api/event-screen-texts" -> handleEventScreenTexts(session)
             uri == "/api/scan" -> handleScan(session)  // 메소드 체크 제거
             uri == "/api/stats" -> serveStats()
             uri == "/api/participants" -> serveParticipants()
@@ -168,8 +170,8 @@ class MonitoringServer(
     private fun serveHomePage(): Response {
         // DB에서 활성 이벤트 정보 가져오기
         val activeEvent = runBlocking { eventDao.getActiveEvent() }
-        val eventTitle = activeEvent?.eventName ?: "이벤트"
-        val eventDescription = activeEvent?.description ?: ""
+        val eventTitle = escapeHtml(activeEvent?.eventName ?: "이벤트")
+        val eventDescription = escapeHtml(activeEvent?.description ?: "")
 
         val html = """
             <!DOCTYPE html>
@@ -684,6 +686,114 @@ class MonitoringServer(
                         background: #2563eb;
                         transform: translateY(-1px);
                     }
+                    .screen-texts-layout {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 24px;
+                        align-items: flex-start;
+                    }
+                    .screen-texts-layout .screen-texts-grid {
+                        flex: 1 1 320px;
+                    }
+                    .screen-preview-panel {
+                        flex: 1 1 420px;
+                        max-width: 640px;
+                    }
+                    .screen-preview-tabs {
+                        display: flex;
+                        flex-wrap: wrap;
+                        align-items: center;
+                        gap: 8px;
+                        margin-bottom: 10px;
+                        font-size: 13px;
+                        color: #475569;
+                    }
+                    .screen-preview-tab {
+                        padding: 6px 12px;
+                        border: 1px solid #cbd5e1;
+                        border-radius: 999px;
+                        background: white;
+                        color: #475569;
+                        font-size: 13px;
+                        cursor: pointer;
+                    }
+                    .screen-preview-tab.active {
+                        background: #3b82f6;
+                        border-color: #3b82f6;
+                        color: white;
+                    }
+                    .screen-preview {
+                        container-type: inline-size;
+                        width: 100%;
+                        aspect-ratio: 16 / 10;
+                        border: 8px solid #1e293b;
+                        border-radius: 14px;
+                        background: #ffffff;
+                        overflow: hidden;
+                    }
+                    /* 1em = 태블릿 화면 너비의 1/80 (태블릿의 16dp에 해당) */
+                    .screen-preview-inner {
+                        position: relative;
+                        width: 100%;
+                        height: 100%;
+                        font-size: 7px;
+                        font-size: 1.25cqw;
+                        color: #1A202C;
+                        text-align: center;
+                        line-height: 1.2;
+                    }
+                    .screen-preview-inner > div,
+                    .screen-preview-inner > table {
+                        position: absolute;
+                        left: 0;
+                        right: 0;
+                        white-space: nowrap;
+                        overflow: hidden;
+                    }
+                    .sp-back { top: 3%; left: 1.2em !important; right: auto !important; font-size: 1.6em; color: #6750a4; }
+                    .sp-gear { top: 3%; right: 1.2em !important; left: auto !important; font-size: 1.6em; color: #6750a4; }
+                    .sp-title { top: 13%; font-size: 2.75em; font-weight: 700; color: #000000; }
+                    .sp-date { top: 22.5%; font-size: 1.375em; color: #000000; }
+                    .sp-name { top: 29.5%; font-size: 2.625em; font-weight: 700; }
+                    .screen-preview-inner > table.sp-table {
+                        top: 39.5%;
+                        left: 26.5%;
+                        right: 26.5%;
+                        width: 47%;
+                        font-size: 1.625em;
+                        border-collapse: collapse;
+                    }
+                    .sp-table td { height: 1.78em; padding: 0; }
+                    .sp-table td:first-child { padding-right: 0.6em; white-space: nowrap; }
+                    .sp-table td:last-child { width: 100%; }
+                    .sp-status { top: 72.5%; font-size: 2em; font-weight: 700; color: #667EEA; }
+                    .screen-preview-note {
+                        margin-top: 8px;
+                        font-size: 12px;
+                        color: #64748b;
+                    }
+                    .screen-texts-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                        gap: 12px 16px;
+                    }
+                    .screen-texts-grid label {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                        font-size: 13px;
+                        color: #475569;
+                    }
+                    .screen-texts-grid input {
+                        padding: 10px 12px;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 8px;
+                        font-size: 14px;
+                    }
+                    .screen-texts-grid input:focus {
+                        outline: none;
+                        border-color: #3b82f6;
+                    }
                     .template-help {
                         margin-top: 15px;
                         padding: 12px;
@@ -1149,6 +1259,55 @@ class MonitoringServer(
                                     <p>💡 사용 가능한 변수: {이름}, {전화번호}, {면허번호}</p>
                                 </div>
                             </div>
+
+                            <div class="template-section" id="screen-texts-section" style="grid-column: 1 / -1;">
+                                <h3>🖥️ 이벤트 화면 문구</h3>
+                                <div class="screen-texts-layout">
+                                <div class="screen-texts-grid" oninput="updateScreenPreview()">
+                                    <label>행사명<input type="text" id="st-eventName" maxlength="60"></label>
+                                    <label>날짜<input type="text" id="st-eventDate" maxlength="40"></label>
+                                    <label>소속 항목 이름<input type="text" id="st-labelOrganization" maxlength="40"></label>
+                                    <label>면허 번호 항목 이름<input type="text" id="st-labelLicense" maxlength="40"></label>
+                                    <label>입장 시간 항목 이름<input type="text" id="st-labelEntryTime" maxlength="40"></label>
+                                    <label>퇴장 시간 항목 이름<input type="text" id="st-labelExitTime" maxlength="40"></label>
+                                    <label>체류 시간 항목 이름<input type="text" id="st-labelDuration" maxlength="40"></label>
+                                    <label>스캔 대기 안내<input type="text" id="st-textWaiting" maxlength="40"></label>
+                                    <label>입장 상태 표시<input type="text" id="st-statusInside" maxlength="40"></label>
+                                    <label>퇴장 상태 표시<input type="text" id="st-statusExited" maxlength="40"></label>
+                                </div>
+                                <div class="screen-preview-panel">
+                                    <div class="screen-preview-tabs">
+                                        <span>미리보기</span>
+                                        <button type="button" class="screen-preview-tab active" id="sp-tab-waiting" onclick="setScreenPreviewState('waiting')">스캔 대기</button>
+                                        <button type="button" class="screen-preview-tab" id="sp-tab-inside" onclick="setScreenPreviewState('inside')">입장 직후</button>
+                                        <button type="button" class="screen-preview-tab" id="sp-tab-exited" onclick="setScreenPreviewState('exited')">퇴장 직후</button>
+                                    </div>
+                                    <div class="screen-preview">
+                                        <div class="screen-preview-inner">
+                                            <div class="sp-back">&larr;</div>
+                                            <div class="sp-gear">&#9881;</div>
+                                            <div class="sp-title" id="sp-title"></div>
+                                            <div class="sp-date" id="sp-date"></div>
+                                            <div class="sp-name" id="sp-name"></div>
+                                            <table class="sp-table">
+                                                <tr><td id="sp-labelOrganization"></td><td id="sp-valueOrganization"></td></tr>
+                                                <tr><td id="sp-labelLicense"></td><td id="sp-valueLicense"></td></tr>
+                                                <tr><td id="sp-labelEntryTime"></td><td id="sp-valueEntryTime"></td></tr>
+                                                <tr><td id="sp-labelExitTime"></td><td id="sp-valueExitTime"></td></tr>
+                                                <tr><td id="sp-labelDuration"></td><td id="sp-valueDuration"></td></tr>
+                                            </table>
+                                            <div class="sp-status" id="sp-status"></div>
+                                        </div>
+                                    </div>
+                                    <p class="screen-preview-note">입력하는 대로 바뀌는 저장 전 모습입니다. 참가자 정보는 예시이고, 글꼴과 간격은 실제 태블릿과 조금 다를 수 있습니다.</p>
+                                </div>
+                                </div>
+                                <button class="save-template-btn" onclick="saveScreenTexts()">화면 문구 저장</button>
+                                <button class="save-template-btn" style="background: #64748b; margin-left: 8px;" onclick="resetScreenTexts()">항목 문구 기본값으로</button>
+                                <div class="template-help">
+                                    <p>💡 저장하면 마스터 태블릿의 이벤트 화면에 바로 반영됩니다. 칸을 비우고 저장하면 기본 문구로 돌아갑니다. 클라이언트 태블릿은 이벤트 화면에 다시 들어갈 때 반영됩니다.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1251,6 +1410,8 @@ class MonitoringServer(
                             console.log('loadAllData called');
 
                             loadTemplates(); // 템플릿 로드
+
+                            loadScreenTexts(); // 이벤트 화면 문구 로드
                             console.log('loadTemplates called');
 
                             checkWebShareSupport(); // Web Share API 지원 확인
@@ -2438,12 +2599,248 @@ class MonitoringServer(
                             alert('템플릿 저장 중 오류가 발생했습니다.');
                         }
                     }
+
+                    // ===== 이벤트 화면 문구 =====
+                    const SCREEN_TEXT_LABEL_KEYS = ['labelOrganization', 'labelLicense', 'labelEntryTime', 'labelExitTime', 'labelDuration', 'textWaiting', 'statusInside', 'statusExited'];
+                    const SCREEN_TEXT_KEYS = ['eventName', 'eventDate'].concat(SCREEN_TEXT_LABEL_KEYS);
+
+                    function fillScreenTexts(data) {
+                        SCREEN_TEXT_KEYS.forEach(function(key) {
+                            const input = document.getElementById('st-' + key);
+                            if (!input) return;
+                            input.value = data[key] || '';
+                            if (data.defaults && data.defaults[key]) {
+                                input.placeholder = '기본: ' + data.defaults[key];
+                            }
+                        });
+                        if (data.defaults) {
+                            screenTextDefaults = data.defaults;
+                        }
+                        updateScreenPreview();
+                        if (data.eventName) {
+                            const heading = document.querySelector('.header h1');
+                            if (heading) heading.textContent = data.eventName + ' 실시간 모니터링';
+                            document.title = data.eventName + ' 실시간 모니터링';
+                        }
+                    }
+
+                    // ----- 미리보기 -----
+                    let screenTextDefaults = {};
+                    let screenPreviewState = 'waiting';
+
+                    // 입력 칸의 값 (비어 있으면 기본 문구)
+                    function screenTextValue(key) {
+                        const input = document.getElementById('st-' + key);
+                        const value = input ? input.value.trim() : '';
+                        return value || screenTextDefaults[key] || '';
+                    }
+
+                    function setPreviewText(id, text) {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = text;
+                    }
+
+                    function updateScreenPreview() {
+                        const shown = screenPreviewState !== 'waiting';
+                        const exited = screenPreviewState === 'exited';
+
+                        setPreviewText('sp-title', screenTextValue('eventName') || '행사명');
+                        setPreviewText('sp-date', screenTextValue('eventDate') || '날짜');
+                        ['labelOrganization', 'labelLicense', 'labelEntryTime', 'labelExitTime', 'labelDuration'].forEach(function(key) {
+                            setPreviewText('sp-' + key, screenTextValue(key));
+                        });
+
+                        // 예시 참가자 (태블릿과 같이: 입장 중에는 퇴장/체류 시간을 비움)
+                        setPreviewText('sp-name', shown ? '홍길동' : '');
+                        setPreviewText('sp-valueOrganization', shown ? '서울병원' : '');
+                        setPreviewText('sp-valueLicense', shown ? '12345' : '');
+                        setPreviewText('sp-valueEntryTime', shown ? '09:03:21' : '');
+                        setPreviewText('sp-valueExitTime', exited ? '11:40:05' : '');
+                        setPreviewText('sp-valueDuration', exited ? '02:36:44' : '');
+
+                        const status = document.getElementById('sp-status');
+                        if (status) {
+                            if (exited) {
+                                status.textContent = screenTextValue('statusExited');
+                                status.style.color = '#ED8936';
+                            } else if (shown) {
+                                status.textContent = screenTextValue('statusInside');
+                                status.style.color = '#48BB78';
+                            } else {
+                                status.textContent = screenTextValue('textWaiting');
+                                status.style.color = '#667EEA';
+                            }
+                        }
+                    }
+
+                    function setScreenPreviewState(state) {
+                        screenPreviewState = state;
+                        ['waiting', 'inside', 'exited'].forEach(function(name) {
+                            const tab = document.getElementById('sp-tab-' + name);
+                            if (tab) tab.classList.toggle('active', name === state);
+                        });
+                        updateScreenPreview();
+                    }
+
+                    async function loadScreenTexts() {
+                        try {
+                            const response = await fetch('/api/event-screen-texts');
+                            const data = await response.json();
+                            if (response.ok) {
+                                fillScreenTexts(data);
+                            } else {
+                                console.error('화면 문구 로드 실패:', data.error);
+                            }
+                        } catch (error) {
+                            console.error('화면 문구 로드 오류:', error);
+                        }
+                    }
+
+                    async function saveScreenTexts() {
+                        try {
+                            const body = {};
+                            SCREEN_TEXT_KEYS.forEach(function(key) {
+                                const input = document.getElementById('st-' + key);
+                                if (input) body[key] = input.value.trim();
+                            });
+
+                            if (!body.eventName || !body.eventDate) {
+                                alert('행사명과 날짜를 입력해주세요.');
+                                return;
+                            }
+
+                            const response = await fetch('/api/event-screen-texts', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json; charset=UTF-8'
+                                },
+                                body: JSON.stringify(body)
+                            });
+                            const data = await response.json();
+
+                            if (response.ok && data.success) {
+                                fillScreenTexts(data);
+                                alert('이벤트 화면 문구가 저장되었습니다.');
+                            } else {
+                                alert('화면 문구 저장 실패: ' + (data.error || '알 수 없는 오류'));
+                            }
+                        } catch (error) {
+                            console.error('화면 문구 저장 오류:', error);
+                            alert('화면 문구 저장 중 오류가 발생했습니다.');
+                        }
+                    }
+
+                    function resetScreenTexts() {
+                        if (!confirm('항목 이름과 안내 문구를 기본값으로 되돌릴까요? 행사명과 날짜는 그대로 둡니다.')) {
+                            return;
+                        }
+                        SCREEN_TEXT_LABEL_KEYS.forEach(function(key) {
+                            const input = document.getElementById('st-' + key);
+                            if (input) input.value = '';
+                        });
+                        saveScreenTexts();
+                    }
                 </script>
             </body>
             </html>
         """.trimIndent()
 
         return newFixedLengthResponse(Response.Status.OK, "text/html", html)
+    }
+
+    /**
+     * HTML 본문에 넣을 문자열 이스케이프
+     */
+    private fun escapeHtml(value: String): String {
+        return value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+    }
+
+    /**
+     * 이벤트 화면 문구 API
+     * GET  /api/event-screen-texts  현재 행사명, 날짜, 화면 문구 조회
+     * POST /api/event-screen-texts  행사명, 날짜, 화면 문구 저장 (JSON)
+     */
+    private fun handleEventScreenTexts(session: IHTTPSession): Response {
+        val jsonMime = "application/json; charset=UTF-8"
+        return try {
+            when (session.method) {
+                Method.GET -> {}
+                Method.POST -> {
+                    val bodyLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+                    if (bodyLength <= 0 || bodyLength > 16 * 1024) {
+                        return newFixedLengthResponse(Response.Status.BAD_REQUEST, jsonMime,
+                            JSONObject().put("error", "요청 본문이 없거나 너무 큽니다.").toString())
+                    }
+
+                    // 본문을 끝까지 읽음 (한 번의 read로 다 오지 않을 수 있음)
+                    val bodyBytes = ByteArray(bodyLength)
+                    var readTotal = 0
+                    while (readTotal < bodyLength) {
+                        val n = session.inputStream.read(bodyBytes, readTotal, bodyLength - readTotal)
+                        if (n <= 0) break
+                        readTotal += n
+                    }
+                    val json = JSONObject(String(bodyBytes, 0, readTotal, Charsets.UTF_8))
+
+                    val eventName = json.optString("eventName").trim().take(60)
+                    val eventDate = json.optString("eventDate").trim().take(40)
+                    if (eventName.isEmpty() || eventDate.isEmpty()) {
+                        return newFixedLengthResponse(Response.Status.BAD_REQUEST, jsonMime,
+                            JSONObject().put("error", "행사명과 날짜를 입력해주세요.").toString())
+                    }
+
+                    // 행사명/날짜는 DB의 활성 이벤트에 저장 (없으면 새로 만듦)
+                    runBlocking {
+                        val activeEvent = eventDao.getActiveEvent()
+                        if (activeEvent == null) {
+                            eventDao.insertEvent(
+                                com.example.qr.data.entity.Event(
+                                    eventName = eventName,
+                                    eventDate = eventDate,
+                                    description = " ",
+                                    isActive = true
+                                )
+                            )
+                        } else {
+                            eventDao.updateEvent(activeEvent.copy(eventName = eventName, eventDate = eventDate))
+                        }
+                    }
+
+                    // 요청에 들어 있는 문구만 저장 (빈 값은 기본 문구로 복귀)
+                    val texts = HashMap<String, String?>()
+                    for (key in EventScreenTexts.DEFAULTS.keys) {
+                        if (json.has(key)) texts[key] = json.optString(key)
+                    }
+                    // save()가 변경 시각을 기록해 이벤트 화면이 바로 다시 그려짐
+                    EventScreenTexts.save(context, texts)
+                    println("🖥️ [API] 이벤트 화면 문구 저장: $eventName / $eventDate")
+                }
+                else -> return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, jsonMime,
+                    JSONObject().put("error", "GET 또는 POST만 지원합니다.").toString())
+            }
+
+            val activeEvent = runBlocking { eventDao.getActiveEvent() }
+            val result = JSONObject().apply {
+                put("success", true)
+                put("eventName", activeEvent?.eventName ?: "")
+                put("eventDate", activeEvent?.eventDate ?: "")
+                EventScreenTexts.load(context).forEach { (key, value) -> put(key, value) }
+                put("defaults", JSONObject(EventScreenTexts.DEFAULTS))
+            }
+            newFixedLengthResponse(Response.Status.OK, jsonMime, result.toString())
+        } catch (e: JSONException) {
+            newFixedLengthResponse(Response.Status.BAD_REQUEST, jsonMime,
+                JSONObject().put("error", "JSON 형식이 올바르지 않습니다.").toString())
+        } catch (e: Exception) {
+            println("❌ [API] 이벤트 화면 문구 처리 오류: ${e.message}")
+            e.printStackTrace()
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, jsonMime,
+                JSONObject().put("error", "화면 문구 처리 실패: ${e.message}").toString())
+        }
     }
 
     private fun serveStats(): Response {
@@ -4697,6 +5094,7 @@ class MonitoringServer(
                 put("description", activeEvent.description)
                 put("backgroundColor", activeEvent.backgroundColor)
                 put("textColor", activeEvent.textColor)
+                put("screenTexts", JSONObject(EventScreenTexts.load(context)))
             }
 
             println("✅ [API] 이벤트 정보 전송: ${activeEvent.eventName}")

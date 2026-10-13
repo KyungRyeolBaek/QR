@@ -58,7 +58,8 @@ data class EventResponse(
     val eventDate: String,
     val description: String,
     val backgroundColor: String,
-    val textColor: String
+    val textColor: String,
+    val screenTexts: Map<String, String>? = null  // 이벤트 화면 문구 (구버전 마스터는 없음)
 )
 
 /**
