@@ -256,6 +256,7 @@ class EventViewModel(
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         _errorMessage.value = "활성화된 이벤트가 없습니다."
                     }
+                    isScanning = false  // 다음 스캔을 받을 수 있도록 해제
                     return@launch
                 }
                 println("✅ [SCAN_EVENT] 이벤트 확인: ${event.eventName} (ID: ${event.id})")
@@ -272,6 +273,7 @@ class EventViewModel(
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         _errorMessage.value = "등록되지 않은 QR 코드입니다: $barcodeData"
                     }
+                    isScanning = false  // 다음 스캔을 받을 수 있도록 해제
                     return@launch
                 }
                 println("✅ [SCAN_FOUND] 참가자 발견: ${participant.fullName} (ID: ${participant.id})")
